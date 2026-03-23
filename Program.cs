@@ -20,6 +20,9 @@ if (providerType == "SqlServer")
     builder.Services.AddScoped<IQueryExecutionService, SqlServerQueryExecutionService>();
 }
 
+// HTTP client for external API calls
+builder.Services.AddHttpClient();
+
 // Authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
