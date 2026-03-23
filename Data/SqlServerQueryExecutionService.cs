@@ -416,6 +416,9 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
             var offset = (request.Page - 1) * result.PageSize;
             var dataSql = $"{dataQuery} {orderByClause} OFFSET {offset} ROWS FETCH NEXT {result.PageSize} ROWS ONLY";
 
+            // Store generated SQL for display
+            result.GeneratedSql = dataSql;
+
             // Execute
             using var connection = _connectionFactory.CreateConnection();
             connection.Open();
@@ -423,7 +426,7 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
             using (var countCmd = connection.CreateCommand())
             {
                 countCmd.CommandText = countSql;
-                countCmd.CommandTimeout = 30;
+                countCmd.CommandTimeout = 120;
                 AddParameters(countCmd, parameters);
                 result.TotalRows = (int)countCmd.ExecuteScalar()!;
             }
@@ -431,7 +434,7 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
             using (var dataCmd = connection.CreateCommand())
             {
                 dataCmd.CommandText = dataSql;
-                dataCmd.CommandTimeout = 30;
+                dataCmd.CommandTimeout = 120;
                 AddParameters(dataCmd, parameters);
 
                 using var reader = dataCmd.ExecuteReader();

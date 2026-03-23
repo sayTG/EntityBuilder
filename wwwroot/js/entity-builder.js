@@ -379,7 +379,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (parsed) {
                 const cols = await fetchColumns(parsed.schema, parsed.table);
                 rightColSel.innerHTML = '<option value="">-- Right Column --</option>' +
-                    cols.map(c => `<option value="${c.columnName}">${c.columnName}</option>`).join('');
+                    cols.map(c => `<option value="${c.columnName}">[${parsed.table}].${c.columnName}</option>`).join('');
                 refreshSearchableSelect(rightColSel);
                 refreshAllDropdowns();
             } else {
