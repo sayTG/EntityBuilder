@@ -225,6 +225,19 @@ document.addEventListener('DOMContentLoaded', function () {
         return html;
     }
 
+    function buildMainTableColumnOptions() {
+        if (!state.mainTable) return '';
+        const key = `${state.mainTable.schema}.${state.mainTable.table}`;
+        const cols = state.columns[key] || [];
+        if (!cols.length) return '';
+        let html = `<optgroup label="${state.mainTable.table}">`;
+        cols.forEach(c => {
+            html += `<option value="${state.mainTable.schema}.${state.mainTable.table}.${c.columnName}">[${state.mainTable.table}].${c.columnName}</option>`;
+        });
+        html += '</optgroup>';
+        return html;
+    }
+
     function buildColumnOptionsWithStar() {
         return '<option value="*">* (All)</option>' + buildColumnOptions();
     }
@@ -240,7 +253,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 refreshSearchableSelect(sel);
             });
         };
-        refreshSelects('.join-left-col');
+        const mainOpts = buildMainTableColumnOptions();
+        document.querySelectorAll('.join-left-col').forEach(sel => {
+            const cur = sel.value;
+            sel.innerHTML = `<option value="">-- Left Column --</option>${mainOpts}`;
+            if (cur) sel.value = cur;
+            refreshSearchableSelect(sel);
+        });
         refreshSelects('.where-column');
         refreshSelects('.groupby-column');
         refreshSelects('.orderby-column');
@@ -345,7 +364,7 @@ document.addEventListener('DOMContentLoaded', function () {
             </select>
             <select class="join-table"><option value="">-- Table --</option>${buildTableOptions()}</select>
             <span class="qb-on-label">ON</span>
-            <select class="join-left-col"><option value="">-- Left Column --</option>${buildColumnOptions()}</select>
+            <select class="join-left-col"><option value="">-- Left Column --</option>${buildMainTableColumnOptions()}</select>
             <span class="qb-equals-label">=</span>
             <select class="join-right-col"><option value="">-- Right Column --</option></select>
             <button class="eb-btn-remove" title="Remove"><i class="bi bi-x"></i></button>`;
