@@ -405,13 +405,16 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
                 ? "ORDER BY " + string.Join(", ", orderByParts)
                 : "ORDER BY (SELECT NULL)";
 
-            // Count query
-            var innerQuery = $"SELECT {selectClause} FROM {fromClause} {joinSql} {whereClause} {groupByClause}";
-            var countSql = $"SELECT COUNT(*) FROM ({innerQuery}) AS __count";
+            // Count query — use SELECT 1 to avoid duplicate column name / unnamed column errors
+            var countInner = hasGroupBy
+                ? $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause} {groupByClause}"
+                : $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause}";
+            var countSql = $"SELECT COUNT(*) FROM ({countInner}) AS __count";
 
             // Data query with pagination
+            var dataQuery = $"SELECT {selectClause} FROM {fromClause} {joinSql} {whereClause} {groupByClause}";
             var offset = (request.Page - 1) * result.PageSize;
-            var dataSql = $"{innerQuery} {orderByClause} OFFSET {offset} ROWS FETCH NEXT {result.PageSize} ROWS ONLY";
+            var dataSql = $"{dataQuery} {orderByClause} OFFSET {offset} ROWS FETCH NEXT {result.PageSize} ROWS ONLY";
 
             // Execute
             using var connection = _connectionFactory.CreateConnection();
