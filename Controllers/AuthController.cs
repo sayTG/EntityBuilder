@@ -91,13 +91,33 @@ public class AuthController : Controller
                 throw new Exception("Could not get valid roles");
             }
 
+            var allowedRoles = _authSettings.AllowedRoles;
+            if (allowedRoles.Count > 0 && !claims.Any(c => c.Type == ClaimTypes.Role && allowedRoles.Contains(c.Value)))
+            {
+                model.ErrorMessage = $"Access denied. Required role(s): {string.Join(", ", allowedRoles)}";
+                return View(model);
+            }
+
+            // Parse token expiration to auto-expire the session
+            DateTimeOffset? expiresAt = null;
+            if (data.TryGetProperty("tokenExpiration", out var tokenExp))
+            {
+                var expStr = tokenExp.GetString();
+                if (DateTimeOffset.TryParse(expStr, out var parsed))
+                    expiresAt = parsed;
+            }
+
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var principal = new ClaimsPrincipal(identity);
 
             await HttpContext.SignInAsync(
                 CookieAuthenticationDefaults.AuthenticationScheme,
                 principal,
-                new AuthenticationProperties { IsPersistent = true });
+                new AuthenticationProperties
+                {
+                    IsPersistent = true,
+                    ExpiresUtc = expiresAt
+                });
 
             var returnUrl = model.ReturnUrl;
             if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
