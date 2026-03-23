@@ -1,0 +1,76 @@
+@model EntityBuilder.ViewModels.QueryResultViewModel
+@{
+    ViewData["Title"] = "Query Editor";
+}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-action="Index">Entity Builder</a></li>
+        <li class="breadcrumb-item active">Query Editor</li>
+    </ol>
+</nav>
+
+<h3 class="mb-3">Query Editor</h3>
+<p class="text-muted">Only SELECT queries are permitted. Press <kbd>Ctrl+Enter</kbd> to execute.</p>
+
+<form asp-action="Query" method="post" id="queryForm">
+    <div class="mb-3">
+        <textarea asp-for="Sql"
+                  class="form-control font-monospace"
+                  rows="6"
+                  placeholder="SELECT TOP 100 * FROM [dbo].[YourTable]"
+                  id="sqlInput"></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Execute</button>
+    <a asp-action="Index" class="btn btn-outline-secondary ms-2">Back to Tables</a>
+</form>
+
+@if (Model.Result is not null)
+{
+    <hr />
+
+    @if (!Model.Result.IsSuccess)
+    {
+        <div class="alert alert-danger mt-3">
+            <strong>Error:</strong> @Model.Result.ErrorMessage
+        </div>
+    }
+    else
+    {
+        <div class="d-flex justify-content-between align-items-center mt-3 mb-2">
+            <span><strong>@Model.Result.TotalRowsReturned</strong> rows returned</span>
+            <span class="text-muted">Executed in @Model.Result.ExecutionTimeMs ms</span>
+        </div>
+
+        @if (Model.Result.Rows.Count == 0)
+        {
+            <div class="alert alert-info">Query returned no rows.</div>
+        }
+        else
+        {
+            <div class="table-responsive eb-data-grid">
+                <table class="table table-striped table-hover table-sm">
+                    <thead class="table-dark sticky-top">
+                        <tr>
+                            @foreach (var col in Model.Result.Columns)
+                            {
+                                <th>@col</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in Model.Result.Rows)
+                        {
+                            <tr>
+                                @foreach (var col in Model.Result.Columns)
+                                {
+                                    <td>@(row[col]?.ToString() ?? "<NULL>")</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}

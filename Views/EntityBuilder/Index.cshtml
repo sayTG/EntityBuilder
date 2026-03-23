@@ -1,0 +1,51 @@
+@model EntityBuilder.ViewModels.TableListViewModel
+@{
+    ViewData["Title"] = "Entity Builder";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>Entity Builder</h2>
+        <p class="text-muted mb-0">Database: <strong>@Model.DatabaseName</strong> &mdash; @Model.Tables.Count table(s)</p>
+    </div>
+    <a asp-action="Query" class="btn btn-outline-primary">Query Editor</a>
+</div>
+
+@if (Model.Tables.Count == 0)
+{
+    <div class="alert alert-info">No tables found in this database.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Schema</th>
+                    <th>Table Name</th>
+                    <th class="text-end">Row Count (est.)</th>
+                    <th class="text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var table in Model.Tables)
+                {
+                    <tr>
+                        <td><span class="badge bg-secondary">@table.SchemaName</span></td>
+                        <td><strong>@table.TableName</strong></td>
+                        <td class="text-end">@table.RowCount.ToString("N0")</td>
+                        <td class="text-center">
+                            <a asp-action="TableData"
+                               asp-route-schema="@table.SchemaName"
+                               asp-route-table="@table.TableName"
+                               class="btn btn-sm btn-primary me-1">View Data</a>
+                            <a asp-action="Query"
+                               asp-route-sql="@($"SELECT TOP 100 * FROM [{table.SchemaName}].[{table.TableName}]")"
+                               class="btn btn-sm btn-outline-secondary">Query</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
