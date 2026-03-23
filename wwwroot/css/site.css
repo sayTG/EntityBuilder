@@ -730,6 +730,21 @@ body {
     font-size: 0.8rem;
 }
 
+/* ===== SQL PREVIEW ===== */
+.eb-sql-preview {
+    margin: 0;
+    padding: 1rem 1.25rem;
+    background: var(--eb-gray-900);
+    color: #E5E7EB;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    border-radius: 0 0 var(--eb-radius) var(--eb-radius);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 /* ===== PAGINATION ===== */
 .eb-pagination {
     display: flex;

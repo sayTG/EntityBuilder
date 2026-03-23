@@ -225,16 +225,34 @@ document.addEventListener('DOMContentLoaded', function () {
         return html;
     }
 
-    function buildMainTableColumnOptions() {
-        if (!state.mainTable) return '';
-        const key = `${state.mainTable.schema}.${state.mainTable.table}`;
-        const cols = state.columns[key] || [];
-        if (!cols.length) return '';
-        let html = `<optgroup label="${state.mainTable.table}">`;
-        cols.forEach(c => {
-            html += `<option value="${state.mainTable.schema}.${state.mainTable.table}.${c.columnName}">[${state.mainTable.table}].${c.columnName}</option>`;
+    // Build column options for the left side of a join at the given index.
+    // Join 0 (first join) gets only main table columns.
+    // Join 1 gets main table + join 0's table columns. Etc.
+    function buildJoinLeftColumnOptions(joinIndex) {
+        const tablesToInclude = [];
+        if (state.mainTable) {
+            tablesToInclude.push({ schema: state.mainTable.schema, table: state.mainTable.table, label: state.mainTable.table });
+        }
+        const joinRows = document.querySelectorAll('.qb-join-row');
+        for (let i = 0; i < joinIndex && i < joinRows.length; i++) {
+            const tableVal = joinRows[i].querySelector('.join-table')?.value;
+            const parsed = parseTableValue(tableVal);
+            if (parsed) {
+                tablesToInclude.push({ schema: parsed.schema, table: parsed.table, label: parsed.table });
+            }
+        }
+        let html = '';
+        tablesToInclude.forEach(t => {
+            const key = `${t.schema}.${t.table}`;
+            const cols = state.columns[key] || [];
+            if (cols.length) {
+                html += `<optgroup label="${t.label}">`;
+                cols.forEach(c => {
+                    html += `<option value="${t.schema}.${t.table}.${c.columnName}">[${t.label}].${c.columnName}</option>`;
+                });
+                html += '</optgroup>';
+            }
         });
-        html += '</optgroup>';
         return html;
     }
 
@@ -253,10 +271,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 refreshSearchableSelect(sel);
             });
         };
-        const mainOpts = buildMainTableColumnOptions();
-        document.querySelectorAll('.join-left-col').forEach(sel => {
+        document.querySelectorAll('.join-left-col').forEach((sel, idx) => {
             const cur = sel.value;
-            sel.innerHTML = `<option value="">-- Left Column --</option>${mainOpts}`;
+            sel.innerHTML = `<option value="">-- Left Column --</option>${buildJoinLeftColumnOptions(idx)}`;
             if (cur) sel.value = cur;
             refreshSearchableSelect(sel);
         });
@@ -364,7 +381,7 @@ document.addEventListener('DOMContentLoaded', function () {
             </select>
             <select class="join-table"><option value="">-- Table --</option>${buildTableOptions()}</select>
             <span class="qb-on-label">ON</span>
-            <select class="join-left-col"><option value="">-- Left Column --</option>${buildMainTableColumnOptions()}</select>
+            <select class="join-left-col"><option value="">-- Left Column --</option>${buildJoinLeftColumnOptions(joinsContainer.querySelectorAll('.qb-join-row').length)}</select>
             <span class="qb-equals-label">=</span>
             <select class="join-right-col"><option value="">-- Right Column --</option></select>
             <button class="eb-btn-remove" title="Remove"><i class="bi bi-x"></i></button>`;
@@ -597,6 +614,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ========== RENDER RESULTS ==========
     function renderResults(result) {
+        // Show generated SQL
+        const sqlSection = document.getElementById('sqlSection');
+        const sqlPreview = document.getElementById('sqlPreview');
+        if (result.generatedSql) {
+            sqlSection.classList.remove('d-none');
+            sqlPreview.textContent = formatSql(result.generatedSql);
+        } else {
+            sqlSection.classList.add('d-none');
+        }
+
         resultsSection.classList.remove('d-none');
         const header = document.getElementById('resultsHeader');
         const errorAlert = document.getElementById('errorAlert');
@@ -678,4 +705,24 @@ document.addEventListener('DOMContentLoaded', function () {
         div.textContent = str;
         return div.innerHTML;
     }
+
+    function formatSql(sql) {
+        const keywords = ['SELECT', 'FROM', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL OUTER JOIN', 'ON', 'WHERE', 'AND', 'OR', 'GROUP BY', 'ORDER BY', 'OFFSET', 'FETCH NEXT'];
+        let formatted = sql.trim();
+        keywords.forEach(kw => {
+            formatted = formatted.replace(new RegExp('\\s+' + kw.replace(/\s+/g, '\\s+') + '\\s', 'gi'), '\n' + kw + ' ');
+        });
+        return formatted.trim();
+    }
+
+    // Copy SQL button
+    document.getElementById('copySqlBtn')?.addEventListener('click', function () {
+        const sql = document.getElementById('sqlPreview')?.textContent;
+        if (sql) {
+            navigator.clipboard.writeText(sql).then(() => {
+                this.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
+                setTimeout(() => { this.innerHTML = '<i class="bi bi-clipboard"></i> Copy'; }, 2000);
+            });
+        }
+    });
 });
