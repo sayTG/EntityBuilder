@@ -1,4 +1,5 @@
 using EntityBuilder.Interfaces;
+using EntityBuilder.Models;
 using EntityBuilder.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -33,40 +34,34 @@ public class EntityBuilderController : Controller
         return View(model);
     }
 
-    public async Task<IActionResult> TableData(string schema, string table)
+    [HttpGet]
+    public async Task<IActionResult> GetColumns(string schema, string table)
     {
         if (string.IsNullOrEmpty(schema) || string.IsNullOrEmpty(table))
-            return RedirectToAction("Index");
+            return BadRequest("Schema and table are required.");
 
         var columns = await _metadataService.GetColumnsAsync(schema, table);
-        var data = await _queryService.GetTableDataAsync(schema, table);
-
-        var model = new TableDataViewModel
-        {
-            SchemaName = schema,
-            TableName = table,
-            Columns = columns,
-            Data = data
-        };
-
-        return View(model);
+        return Json(columns);
     }
 
     [HttpGet]
-    public IActionResult Query(string? sql = null)
+    public async Task<IActionResult> GetForeignKeys(string schema, string table)
     {
-        return View(new QueryResultViewModel { Sql = sql ?? string.Empty });
+        if (string.IsNullOrEmpty(schema) || string.IsNullOrEmpty(table))
+            return BadRequest("Schema and table are required.");
+
+        var fks = await _metadataService.GetForeignKeysAsync(schema, table);
+        return Json(fks);
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Query(QueryResultViewModel model)
+    public async Task<IActionResult> ExecuteQuery([FromBody] QueryBuilderRequest request)
     {
-        if (!string.IsNullOrWhiteSpace(model.Sql))
-        {
-            model.Result = await _queryService.ExecuteSelectAsync(model.Sql);
-        }
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
 
-        return View(model);
+        var result = await _queryService.ExecuteStructuredQueryAsync(request);
+        return Json(result);
     }
 }

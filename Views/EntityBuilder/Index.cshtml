@@ -1,51 +1,143 @@
 @model EntityBuilder.ViewModels.TableListViewModel
 @{
-    ViewData["Title"] = "Entity Builder";
+    ViewData["Title"] = "Query Builder";
 }
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="eb-page-header">
     <div>
-        <h2>Entity Builder</h2>
-        <p class="text-muted mb-0">Database: <strong>@Model.DatabaseName</strong> &mdash; @Model.Tables.Count table(s)</p>
+        <h2 class="eb-page-title"><i class="bi bi-columns-gap me-2"></i>Query Builder</h2>
+        <p class="eb-page-subtitle">
+            <i class="bi bi-database me-1"></i> <strong>@Model.DatabaseName</strong> &mdash; @Model.Tables.Count table(s)
+        </p>
     </div>
-    <a asp-action="Query" class="btn btn-outline-primary">Query Editor</a>
 </div>
 
-@if (Model.Tables.Count == 0)
-{
-    <div class="alert alert-info">No tables found in this database.</div>
-}
-else
-{
-    <div class="table-responsive">
-        <table class="table table-striped table-hover align-middle">
-            <thead class="table-dark">
-                <tr>
-                    <th>Schema</th>
-                    <th>Table Name</th>
-                    <th class="text-end">Row Count (est.)</th>
-                    <th class="text-center">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var table in Model.Tables)
-                {
-                    <tr>
-                        <td><span class="badge bg-secondary">@table.SchemaName</span></td>
-                        <td><strong>@table.TableName</strong></td>
-                        <td class="text-end">@table.RowCount.ToString("N0")</td>
-                        <td class="text-center">
-                            <a asp-action="TableData"
-                               asp-route-schema="@table.SchemaName"
-                               asp-route-table="@table.TableName"
-                               class="btn btn-sm btn-primary me-1">View Data</a>
-                            <a asp-action="Query"
-                               asp-route-sql="@($"SELECT TOP 100 * FROM [{table.SchemaName}].[{table.TableName}]")"
-                               class="btn btn-sm btn-outline-secondary">Query</a>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+@Html.AntiForgeryToken()
+
+<!-- Main Table Selection -->
+<div class="eb-card mb-3">
+    <div class="eb-card-header">
+        <i class="bi bi-table me-2"></i> Main Table
     </div>
-}
+    <div class="eb-card-body">
+        <select id="mainTable" class="eb-select">
+            <option value="">-- Select a table --</option>
+            @foreach (var t in Model.Tables)
+            {
+                <option value="@t.SchemaName|@t.TableName">[@t.SchemaName].[@t.TableName] (@t.RowCount.ToString("N0") rows)</option>
+            }
+        </select>
+    </div>
+</div>
+
+<!-- JOINs Section -->
+<div class="eb-card mb-3">
+    <div class="eb-card-header">
+        <i class="bi bi-diagram-3 me-2"></i> JOINs
+        <button id="addJoin" class="eb-btn-add" disabled>
+            <i class="bi bi-plus-lg"></i> Add Join
+        </button>
+    </div>
+    <div class="eb-card-body" id="joinsContainer">
+        <p class="eb-empty-message" id="noJoinsMessage">
+            <i class="bi bi-info-circle me-1"></i> No joins added. Select a main table first.
+        </p>
+    </div>
+</div>
+
+<!-- WHERE Conditions Section -->
+<div class="eb-card mb-3">
+    <div class="eb-card-header">
+        <i class="bi bi-funnel me-2"></i> WHERE Conditions
+        <button id="addWhere" class="eb-btn-add" disabled>
+            <i class="bi bi-plus-lg"></i> Add Condition
+        </button>
+    </div>
+    <div class="eb-card-body" id="whereContainer">
+        <p class="eb-empty-message" id="noWhereMessage">
+            <i class="bi bi-info-circle me-1"></i> No conditions added. Select a main table first.
+        </p>
+    </div>
+</div>
+
+<!-- GROUP BY Section -->
+<div class="eb-card mb-3">
+    <div class="eb-card-header">
+        <i class="bi bi-collection me-2"></i> GROUP BY
+        <div>
+            <button id="addGroupBy" class="eb-btn-add" disabled>
+                <i class="bi bi-plus-lg"></i> Add Column
+            </button>
+            <button id="addAggregate" class="eb-btn-add ms-1" disabled>
+                <i class="bi bi-calculator"></i> Add Aggregate
+            </button>
+        </div>
+    </div>
+    <div class="eb-card-body" id="groupByContainer">
+        <p class="eb-empty-message" id="noGroupByMessage">
+            <i class="bi bi-info-circle me-1"></i> No grouping. Results will return individual rows.
+        </p>
+    </div>
+</div>
+
+<!-- ORDER BY Section -->
+<div class="eb-card mb-3">
+    <div class="eb-card-header">
+        <i class="bi bi-sort-down me-2"></i> ORDER BY
+        <button id="addOrderBy" class="eb-btn-add" disabled>
+            <i class="bi bi-plus-lg"></i> Add Sort
+        </button>
+    </div>
+    <div class="eb-card-body" id="orderByContainer">
+        <p class="eb-empty-message" id="noOrderByMessage">
+            <i class="bi bi-info-circle me-1"></i> No sorting applied. Default order will be used.
+        </p>
+    </div>
+</div>
+
+<!-- SELECT Columns Section -->
+<div class="eb-card mb-3">
+    <div class="eb-card-header">
+        <i class="bi bi-check2-square me-2"></i> SELECT Columns
+        <span class="eb-badge" id="colCountBadge"></span>
+    </div>
+    <div class="eb-card-body" id="columnsContainer">
+        <p class="eb-empty-message" id="noColumnsMessage">
+            <i class="bi bi-info-circle me-1"></i> Select a main table to see available columns.
+        </p>
+    </div>
+</div>
+
+<!-- Execute -->
+<div class="eb-execute-bar">
+    <button id="executeQuery" class="eb-btn-execute" disabled>
+        <i class="bi bi-play-fill me-2"></i> Execute Query
+    </button>
+    <div id="loadingSpinner" class="eb-spinner d-none">
+        <div class="spinner-border spinner-border-sm" role="status"></div>
+        <span>Running query...</span>
+    </div>
+</div>
+
+<!-- Results -->
+<div id="resultsSection" class="d-none">
+    <div class="eb-card eb-results-card">
+        <div class="eb-card-header eb-results-header" id="resultsHeader"></div>
+        <div class="eb-card-body p-0">
+            <div id="errorAlert" class="eb-alert-error m-3 d-none"></div>
+            <div id="noDataAlert" class="eb-empty-message m-3 d-none">
+                <i class="bi bi-inbox me-1"></i> Query returned no rows.
+            </div>
+            <div class="table-responsive eb-data-grid" id="dataGridContainer">
+                <table class="eb-results-table" id="resultsTable">
+                    <thead id="resultsTableHead"></thead>
+                    <tbody id="resultsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="eb-card-footer" id="paginationContainer"></div>
+    </div>
+</div>
+
+<!-- Table list data for JS -->
+<script id="tableListData" type="application/json">@Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Tables, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase }))</script>

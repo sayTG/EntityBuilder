@@ -8,7 +8,10 @@ namespace EntityBuilder.Controllers
     {
         public IActionResult Index()
         {
-            return View();
+            if (User.Identity?.IsAuthenticated == true)
+                return RedirectToAction("Index", "EntityBuilder");
+
+            return RedirectToAction("Login", "Auth");
         }
 
         public IActionResult Privacy()

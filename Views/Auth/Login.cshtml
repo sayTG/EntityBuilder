@@ -4,39 +4,83 @@
     Layout = "_Layout";
 }
 
-<div class="row justify-content-center mt-5">
-    <div class="col-md-5 col-lg-4">
-        <div class="card shadow">
-            <div class="card-body p-4">
-                <h3 class="card-title text-center mb-4">Entity Builder</h3>
-                <p class="text-muted text-center mb-4">Sign in to continue</p>
-
-                @if (!string.IsNullOrEmpty(Model.ErrorMessage))
-                {
-                    <div class="alert alert-danger" role="alert">
-                        @Model.ErrorMessage
-                    </div>
-                }
-
-                <form asp-action="Login" asp-controller="Auth" method="post">
-                    <input type="hidden" asp-for="ReturnUrl" />
-                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
-
-                    <div class="mb-3">
-                        <label asp-for="Username" class="form-label">Username</label>
-                        <input asp-for="Username" class="form-control" autofocus />
-                        <span asp-validation-for="Username" class="text-danger"></span>
-                    </div>
-
-                    <div class="mb-3">
-                        <label asp-for="Password" class="form-label">Password</label>
-                        <input asp-for="Password" class="form-control" />
-                        <span asp-validation-for="Password" class="text-danger"></span>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary w-100">Sign In</button>
-                </form>
+<div class="eb-login-page">
+    <div class="eb-login-left">
+        <div class="eb-login-art">
+            <div class="eb-floating-shapes">
+                <div class="eb-shape eb-shape-1"></div>
+                <div class="eb-shape eb-shape-2"></div>
+                <div class="eb-shape eb-shape-3"></div>
+                <div class="eb-shape eb-shape-4"></div>
+                <div class="eb-shape eb-shape-5"></div>
             </div>
+            <div class="eb-login-art-content">
+                <div class="eb-login-logo">
+                    <i class="bi bi-database-fill-gear"></i>
+                </div>
+                <h1>Entity<strong>Builder</strong></h1>
+                <p class="eb-login-tagline">Visual SQL Query Builder</p>
+                <div class="eb-login-features">
+                    <div class="eb-feature">
+                        <i class="bi bi-table"></i>
+                        <span>Browse Tables</span>
+                    </div>
+                    <div class="eb-feature">
+                        <i class="bi bi-diagram-3"></i>
+                        <span>Visual Joins</span>
+                    </div>
+                    <div class="eb-feature">
+                        <i class="bi bi-funnel"></i>
+                        <span>Smart Filters</span>
+                    </div>
+                    <div class="eb-feature">
+                        <i class="bi bi-bar-chart-line"></i>
+                        <span>Aggregations</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="eb-login-right">
+        <div class="eb-login-form-wrapper">
+            <h2 class="eb-login-title">Welcome Back</h2>
+            <p class="eb-login-subtitle">Sign in to your account</p>
+
+            @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+            {
+                <div class="eb-alert-error">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    @Model.ErrorMessage
+                </div>
+            }
+
+            <form asp-action="Login" asp-controller="Auth" method="post">
+                <input type="hidden" asp-for="ReturnUrl" />
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                <div class="eb-input-group">
+                    <label asp-for="Username" class="eb-label">Username</label>
+                    <div class="eb-input-wrapper">
+                        <i class="bi bi-person"></i>
+                        <input asp-for="Username" class="eb-input" placeholder="Enter your username" autofocus />
+                    </div>
+                    <span asp-validation-for="Username" class="text-danger"></span>
+                </div>
+
+                <div class="eb-input-group">
+                    <label asp-for="Password" class="eb-label">Password</label>
+                    <div class="eb-input-wrapper">
+                        <i class="bi bi-lock"></i>
+                        <input asp-for="Password" class="eb-input" placeholder="Enter your password" />
+                    </div>
+                    <span asp-validation-for="Password" class="text-danger"></span>
+                </div>
+
+                <button type="submit" class="eb-btn-login">
+                    <span>Sign In</span>
+                    <i class="bi bi-arrow-right"></i>
+                </button>
+            </form>
         </div>
     </div>
 </div>

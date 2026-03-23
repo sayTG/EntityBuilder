@@ -113,4 +113,60 @@ public class SqlServerMetadataService : IDatabaseMetadataService
         var result = command.ExecuteScalar();
         return result?.ToString() ?? "Unknown";
     }
+
+    public async Task<IReadOnlyList<ForeignKeyInfo>> GetForeignKeysAsync(string schemaName, string tableName)
+    {
+        const string sql = """
+            SELECT
+                OBJECT_SCHEMA_NAME(fk.parent_object_id) AS FkSchema,
+                OBJECT_NAME(fk.parent_object_id) AS FkTable,
+                COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS FkColumn,
+                OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ReferencedSchema,
+                OBJECT_NAME(fk.referenced_object_id) AS ReferencedTable,
+                COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ReferencedColumn,
+                fk.name AS ConstraintName
+            FROM sys.foreign_keys fk
+            INNER JOIN sys.foreign_key_columns fkc
+                ON fk.object_id = fkc.constraint_object_id
+            WHERE (OBJECT_SCHEMA_NAME(fk.parent_object_id) = @Schema
+                   AND OBJECT_NAME(fk.parent_object_id) = @Table)
+               OR (OBJECT_SCHEMA_NAME(fk.referenced_object_id) = @Schema
+                   AND OBJECT_NAME(fk.referenced_object_id) = @Table)
+            ORDER BY fk.name, fkc.constraint_column_id
+            """;
+
+        var results = new List<ForeignKeyInfo>();
+        using var connection = _connectionFactory.CreateConnection();
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        var schemaParam = command.CreateParameter();
+        schemaParam.ParameterName = "@Schema";
+        schemaParam.Value = schemaName;
+        command.Parameters.Add(schemaParam);
+
+        var tableParam = command.CreateParameter();
+        tableParam.ParameterName = "@Table";
+        tableParam.Value = tableName;
+        command.Parameters.Add(tableParam);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            results.Add(new ForeignKeyInfo
+            {
+                FkSchema = reader.GetString(0),
+                FkTable = reader.GetString(1),
+                FkColumn = reader.GetString(2),
+                ReferencedSchema = reader.GetString(3),
+                ReferencedTable = reader.GetString(4),
+                ReferencedColumn = reader.GetString(5),
+                ConstraintName = reader.GetString(6)
+            });
+        }
+
+        return results;
+    }
 }
