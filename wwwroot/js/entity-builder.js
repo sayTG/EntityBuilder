@@ -23,6 +23,21 @@ document.addEventListener('DOMContentLoaded', function () {
     const resultsSection = document.getElementById('resultsSection');
     const loadingSpinner = document.getElementById('loadingSpinner');
 
+    // Chart elements
+    const viewModeTabs = document.getElementById('viewModeTabs');
+    const chartConfigPanel = document.getElementById('chartConfigPanel');
+    const chartLabelSelect = document.getElementById('chartLabelColumn');
+    const chartValueSelect = document.getElementById('chartValueColumn');
+    const barChartContainer = document.getElementById('barChartContainer');
+    const pieChartContainer = document.getElementById('pieChartContainer');
+    const barChartCanvas = document.getElementById('barChartCanvas');
+    const pieChartCanvas = document.getElementById('pieChartCanvas');
+
+    let barChartInstance = null;
+    let pieChartInstance = null;
+    let lastResultData = null;
+    let currentView = 'grid';
+
     // ========== SEARCHABLE SELECT COMPONENT ==========
     let activeSearchable = null;
 
@@ -624,6 +639,9 @@ document.addEventListener('DOMContentLoaded', function () {
             sqlSection.classList.add('d-none');
         }
 
+        // Reset to grid view
+        switchView('grid');
+
         resultsSection.classList.remove('d-none');
         const header = document.getElementById('resultsHeader');
         const errorAlert = document.getElementById('errorAlert');
@@ -643,13 +661,42 @@ document.addEventListener('DOMContentLoaded', function () {
             errorAlert.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>${escapeHtml(result.errorMessage)}`;
             errorAlert.classList.remove('d-none');
             gridContainer.classList.add('d-none');
+            viewModeTabs?.classList.add('d-none');
+            if (barChartInstance) { barChartInstance.destroy(); barChartInstance = null; }
+            if (pieChartInstance) { pieChartInstance.destroy(); pieChartInstance = null; }
+            lastResultData = null;
             return;
         }
 
         header.innerHTML = `<strong><i class="bi bi-table me-1"></i> ${result.totalRows.toLocaleString()} total rows</strong>
             <span class="text-muted">Page ${result.currentPage} of ${result.totalPages} &bull; ${result.executionTimeMs}ms</span>`;
 
-        if (!result.rows.length) { noDataAlert.classList.remove('d-none'); gridContainer.classList.add('d-none'); return; }
+        if (!result.rows.length) {
+            noDataAlert.classList.remove('d-none');
+            gridContainer.classList.add('d-none');
+            viewModeTabs?.classList.add('d-none');
+            lastResultData = null;
+            return;
+        }
+
+        // Store result for charts and show tabs
+        lastResultData = result;
+        viewModeTabs?.classList.remove('d-none');
+
+        // Populate chart column selectors
+        if (chartLabelSelect && chartValueSelect) {
+            const colOpts = result.columns.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+            chartLabelSelect.innerHTML = '<option value="">-- Select column --</option>' + colOpts;
+            chartValueSelect.innerHTML = '<option value="">-- Select column --</option>' + colOpts;
+            if (result.columns.length >= 2) {
+                chartLabelSelect.value = result.columns[0];
+                let valueIdx = 1;
+                for (let i = 1; i < result.columns.length; i++) {
+                    if (result.rows.length > 0 && typeof result.rows[0][result.columns[i]] === 'number') { valueIdx = i; break; }
+                }
+                chartValueSelect.value = result.columns[valueIdx];
+            }
+        }
 
         let headHtml = '<tr>';
         result.columns.forEach(col => { headHtml += `<th>${escapeHtml(col)}</th>`; });
@@ -725,4 +772,115 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }
     });
+
+    // ========== CHART FUNCTIONS ==========
+    function getChartColors(count) {
+        const palette = [
+            '#DC2626', '#B91C1C', '#EF4444', '#F87171', '#991B1B',
+            '#7F1D1D', '#FCA5A5', '#374151', '#6B7280', '#9CA3AF',
+            '#1F2937', '#D1D5DB', '#4B5563', '#F59E0B', '#10B981'
+        ];
+        const colors = [];
+        for (let i = 0; i < count; i++) colors.push(palette[i % palette.length]);
+        return colors;
+    }
+
+    function switchView(view) {
+        currentView = view;
+        viewModeTabs?.querySelectorAll('.eb-view-tab').forEach(t =>
+            t.classList.toggle('active', t.dataset.view === view));
+
+        const gridContainer = document.getElementById('dataGridContainer');
+        const pagination = document.getElementById('paginationContainer');
+
+        gridContainer?.classList.toggle('d-none', view !== 'grid');
+        pagination?.classList.toggle('d-none', view !== 'grid');
+        barChartContainer?.classList.toggle('d-none', view !== 'bar');
+        pieChartContainer?.classList.toggle('d-none', view !== 'pie');
+        chartConfigPanel?.classList.toggle('d-none', view === 'grid');
+
+        if (view !== 'grid' && lastResultData) renderChart(view);
+    }
+
+    function renderChart(type) {
+        if (!lastResultData || !lastResultData.rows.length) return;
+
+        const labelCol = chartLabelSelect?.value;
+        const valueCol = chartValueSelect?.value;
+        if (!labelCol || !valueCol) return;
+
+        const rows = lastResultData.rows;
+        const labels = rows.map(r => r[labelCol] !== null ? String(r[labelCol]) : 'NULL');
+        const values = rows.map(r => {
+            const v = parseFloat(r[valueCol]);
+            return isNaN(v) ? 0 : v;
+        });
+
+        const colors = getChartColors(labels.length);
+
+        if (type === 'bar') {
+            if (barChartInstance) barChartInstance.destroy();
+            barChartInstance = new Chart(barChartCanvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: valueCol,
+                        data: values,
+                        backgroundColor: 'rgba(220, 38, 38, 0.8)',
+                        borderColor: '#DC2626',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        hoverBackgroundColor: '#B91C1C'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { font: { family: "'Inter', sans-serif", weight: '600' }, color: '#374151' } },
+                        tooltip: { backgroundColor: '#1F2937', titleFont: { family: "'Inter', sans-serif", weight: '700' }, bodyFont: { family: "'Inter', sans-serif" }, cornerRadius: 8, padding: 10 }
+                    },
+                    scales: {
+                        x: { ticks: { font: { family: "'Inter', sans-serif", size: 11 }, color: '#6B7280', maxRotation: 45 }, grid: { color: '#F3F4F6' } },
+                        y: { beginAtZero: true, ticks: { font: { family: "'Inter', sans-serif", size: 11 }, color: '#6B7280' }, grid: { color: '#F3F4F6' } }
+                    }
+                }
+            });
+        } else if (type === 'pie') {
+            if (pieChartInstance) pieChartInstance.destroy();
+            pieChartInstance = new Chart(pieChartCanvas.getContext('2d'), {
+                type: 'pie',
+                data: {
+                    labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: colors,
+                        borderColor: '#FFFFFF',
+                        borderWidth: 2,
+                        hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { font: { family: "'Inter', sans-serif", size: 12, weight: '500' }, color: '#374151', padding: 12, usePointStyle: true, pointStyleWidth: 10 } },
+                        tooltip: { backgroundColor: '#1F2937', titleFont: { family: "'Inter', sans-serif", weight: '700' }, bodyFont: { family: "'Inter', sans-serif" }, cornerRadius: 8, padding: 10 }
+                    }
+                }
+            });
+        }
+    }
+
+    // View tab switching
+    viewModeTabs?.addEventListener('click', function (e) {
+        const tab = e.target.closest('.eb-view-tab');
+        if (!tab || tab.dataset.view === currentView) return;
+        switchView(tab.dataset.view);
+    });
+
+    // Re-render chart when column selection changes
+    chartLabelSelect?.addEventListener('change', () => { if (currentView !== 'grid' && lastResultData) renderChart(currentView); });
+    chartValueSelect?.addEventListener('change', () => { if (currentView !== 'grid' && lastResultData) renderChart(currentView); });
 });

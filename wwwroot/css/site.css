@@ -745,6 +745,105 @@ body {
     word-break: break-word;
 }
 
+/* ===== VIEW MODE TABS ===== */
+.eb-view-tabs {
+    display: flex;
+    gap: 0;
+    background: var(--eb-gray-100);
+    border-bottom: 1px solid var(--eb-gray-200);
+    padding: 0 1.25rem;
+}
+
+.eb-view-tab {
+    background: none;
+    border: none;
+    padding: 0.6rem 1.25rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--eb-gray-500);
+    cursor: pointer;
+    transition: var(--eb-transition);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.eb-view-tab:hover {
+    color: var(--eb-red);
+    background: var(--eb-red-lighter);
+}
+
+.eb-view-tab.active {
+    color: var(--eb-red);
+    border-bottom-color: var(--eb-red);
+    background: var(--eb-white);
+}
+
+/* ===== CHART CONFIGURATION ===== */
+.eb-chart-config {
+    display: flex;
+    gap: 1.5rem;
+    padding: 0.85rem 1.25rem;
+    background: var(--eb-gray-50);
+    border-bottom: 1px solid var(--eb-gray-200);
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.eb-chart-config-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 250px;
+}
+
+.eb-chart-config-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--eb-gray-600);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.eb-chart-config-label i {
+    color: var(--eb-red);
+}
+
+.eb-chart-select {
+    flex: 1;
+    padding: 0.4rem 0.65rem;
+    border: 1.5px solid var(--eb-gray-200);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: var(--eb-white);
+    outline: none;
+    transition: var(--eb-transition);
+    color: var(--eb-gray-700);
+}
+
+.eb-chart-select:focus {
+    border-color: var(--eb-red);
+    box-shadow: 0 0 0 3px var(--eb-red-glow);
+}
+
+/* ===== CHART CONTAINERS ===== */
+.eb-chart-container {
+    padding: 1.5rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+    max-height: 65vh;
+}
+
+.eb-chart-container canvas {
+    max-width: 100%;
+    max-height: 60vh;
+}
+
 /* ===== PAGINATION ===== */
 .eb-pagination {
     display: flex;

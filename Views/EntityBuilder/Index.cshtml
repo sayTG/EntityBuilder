@@ -138,16 +138,56 @@
 <div id="resultsSection" class="d-none">
     <div class="eb-card eb-results-card">
         <div class="eb-card-header eb-results-header" id="resultsHeader"></div>
+        <!-- View Mode Tabs -->
+        <div class="eb-view-tabs d-none" id="viewModeTabs">
+            <button class="eb-view-tab active" data-view="grid">
+                <i class="bi bi-table me-1"></i> Data Grid
+            </button>
+            <button class="eb-view-tab" data-view="bar">
+                <i class="bi bi-bar-chart-fill me-1"></i> Bar Chart
+            </button>
+            <button class="eb-view-tab" data-view="pie">
+                <i class="bi bi-pie-chart-fill me-1"></i> Pie Chart
+            </button>
+        </div>
         <div class="eb-card-body p-0">
             <div id="errorAlert" class="eb-alert-error m-3 d-none"></div>
             <div id="noDataAlert" class="eb-empty-message m-3 d-none">
                 <i class="bi bi-inbox me-1"></i> Query returned no rows.
             </div>
+            <!-- Chart Configuration -->
+            <div id="chartConfigPanel" class="eb-chart-config d-none">
+                <div class="eb-chart-config-row">
+                    <label class="eb-chart-config-label">
+                        <i class="bi bi-tag me-1"></i> Label Column
+                    </label>
+                    <select id="chartLabelColumn" class="eb-chart-select">
+                        <option value="">-- Select column --</option>
+                    </select>
+                </div>
+                <div class="eb-chart-config-row">
+                    <label class="eb-chart-config-label">
+                        <i class="bi bi-123 me-1"></i> Value Column
+                    </label>
+                    <select id="chartValueColumn" class="eb-chart-select">
+                        <option value="">-- Select column --</option>
+                    </select>
+                </div>
+            </div>
+            <!-- Data Grid -->
             <div class="table-responsive eb-data-grid" id="dataGridContainer">
                 <table class="eb-results-table" id="resultsTable">
                     <thead id="resultsTableHead"></thead>
                     <tbody id="resultsTableBody"></tbody>
                 </table>
+            </div>
+            <!-- Bar Chart -->
+            <div id="barChartContainer" class="eb-chart-container d-none">
+                <canvas id="barChartCanvas"></canvas>
+            </div>
+            <!-- Pie Chart -->
+            <div id="pieChartContainer" class="eb-chart-container d-none">
+                <canvas id="pieChartCanvas"></canvas>
             </div>
         </div>
         <div class="eb-card-footer" id="paginationContainer"></div>
