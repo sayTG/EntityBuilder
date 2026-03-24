@@ -1,8 +1,10 @@
 using System.Data;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using EntityBuilder.Configuration;
 using EntityBuilder.Interfaces;
 using EntityBuilder.Models;
+using Microsoft.Extensions.Options;
 
 namespace EntityBuilder.Data;
 
@@ -10,6 +12,7 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IDatabaseMetadataService _metadataService;
+    private readonly int? _maxDop;
 
     private static readonly HashSet<string> ForbiddenKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -20,11 +23,16 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
 
     public SqlServerQueryExecutionService(
         IDbConnectionFactory connectionFactory,
-        IDatabaseMetadataService metadataService)
+        IDatabaseMetadataService metadataService,
+        IOptions<DatabaseSettings> dbSettings)
     {
         _connectionFactory = connectionFactory;
         _metadataService = metadataService;
+        _maxDop = dbSettings.Value.MaxDop;
     }
+
+    private string AppendMaxDop(string sql) =>
+        _maxDop.HasValue ? $"{sql} OPTION (MAXDOP {_maxDop.Value})" : sql;
 
     public async Task<QueryResultSet> ExecuteSelectAsync(string sql, int maxRows = 1000)
     {
@@ -45,7 +53,7 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
             connection.Open();
 
             using var command = connection.CreateCommand();
-            command.CommandText = sql;
+            command.CommandText = AppendMaxDop(sql);
             command.CommandTimeout = 30;
 
             using var reader = command.ExecuteReader();
@@ -425,7 +433,7 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
 
             using (var countCmd = connection.CreateCommand())
             {
-                countCmd.CommandText = countSql;
+                countCmd.CommandText = AppendMaxDop(countSql);
                 countCmd.CommandTimeout = 120;
                 AddParameters(countCmd, parameters);
                 result.TotalRows = (int)countCmd.ExecuteScalar()!;
@@ -433,7 +441,7 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
 
             using (var dataCmd = connection.CreateCommand())
             {
-                dataCmd.CommandText = dataSql;
+                dataCmd.CommandText = AppendMaxDop(dataSql);
                 dataCmd.CommandTimeout = 120;
                 AddParameters(dataCmd, parameters);
 
