@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const addAggregateBtn = document.getElementById('addAggregate');
     const addOrderByBtn = document.getElementById('addOrderBy');
     const executeBtn = document.getElementById('executeQuery');
+    const sendReportBtn = document.getElementById('sendReportEmail');
+    const reportSpinner = document.getElementById('reportSpinner');
     const joinsContainer = document.getElementById('joinsContainer');
     const whereContainer = document.getElementById('whereContainer');
     const groupByContainer = document.getElementById('groupByContainer');
@@ -36,6 +38,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let barChartInstance = null;
     let pieChartInstance = null;
     let lastResultData = null;
+    let lastQueryParameters = null;
     let currentView = 'grid';
 
     // ========== SEARCHABLE SELECT COMPONENT ==========
@@ -371,7 +374,7 @@ document.addEventListener('DOMContentLoaded', function () {
         groupByContainer.innerHTML = '<p class="eb-empty-message" id="noGroupByMessage"><i class="bi bi-info-circle me-1"></i> No grouping.</p>';
         orderByContainer.innerHTML = '<p class="eb-empty-message" id="noOrderByMessage"><i class="bi bi-info-circle me-1"></i> No sorting applied.</p>';
 
-        const btns = [addJoinBtn, addWhereBtn, addGroupByBtn, addAggregateBtn, addOrderByBtn, executeBtn];
+        const btns = [addJoinBtn, addWhereBtn, addGroupByBtn, addAggregateBtn, addOrderByBtn, executeBtn, sendReportBtn];
         if (parsed) {
             await fetchColumns(parsed.schema, parsed.table);
             btns.forEach(b => { if (b) b.disabled = false; });
@@ -618,14 +621,66 @@ document.addEventListener('DOMContentLoaded', function () {
                 headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': getAntiForgeryToken() },
                 body: JSON.stringify(request)
             });
-            renderResults(await resp.json());
+            const data = await resp.json();
+            lastQueryParameters = data.parameters || {};
+            renderResults(data);
         } catch (err) {
+            lastQueryParameters = null;
             renderResults({ isSuccess: false, errorMessage: err.message });
         } finally {
             loadingSpinner.classList.add('d-none');
             executeBtn.disabled = false;
         }
     }
+
+    // ========== SEND REPORT TO EMAIL ==========
+    const reportFeedback = document.getElementById('reportFeedback');
+
+    function showReportFeedback(message, isError) {
+        reportFeedback.textContent = message;
+        reportFeedback.style.background = isError ? '#FEE2E2' : '#D1FAE5';
+        reportFeedback.style.color = isError ? '#991B1B' : '#065F46';
+        reportFeedback.classList.remove('d-none');
+        if (!isError) setTimeout(() => reportFeedback.classList.add('d-none'), 5000);
+    }
+
+    sendReportBtn?.addEventListener('click', async function () {
+        reportFeedback.classList.add('d-none');
+        const sqlPreview = document.getElementById('sqlPreview');
+        const sql = sqlPreview?.textContent?.trim();
+
+        if (!sql) {
+            showReportFeedback('Please execute a query first to generate SQL.', true);
+            return;
+        }
+
+        sendReportBtn.disabled = true;
+        reportSpinner.classList.remove('d-none');
+
+        try {
+            const resp = await fetch('/EntityBuilder/SendReportEmail', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': getAntiForgeryToken() },
+                body: JSON.stringify({
+                    sql,
+                    dapperTemplateValues: lastQueryParameters || {}
+                })
+            });
+
+            const result = await resp.json();
+
+            if (resp.ok) {
+                showReportFeedback('Report sent successfully to your email.', false);
+            } else {
+                showReportFeedback(result.message || 'Failed to send report.', true);
+            }
+        } catch (err) {
+            showReportFeedback('Error sending report: ' + err.message, true);
+        } finally {
+            reportSpinner.classList.add('d-none');
+            sendReportBtn.disabled = false;
+        }
+    });
 
     // ========== RENDER RESULTS ==========
     function renderResults(result) {

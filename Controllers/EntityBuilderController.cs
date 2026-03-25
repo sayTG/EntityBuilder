@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using EntityBuilder.Interfaces;
 using EntityBuilder.Models;
 using EntityBuilder.ViewModels;
@@ -11,13 +12,16 @@ public class EntityBuilderController : Controller
 {
     private readonly IDatabaseMetadataService _metadataService;
     private readonly IQueryExecutionService _queryService;
+    private readonly IReportEmailService _reportEmailService;
 
     public EntityBuilderController(
         IDatabaseMetadataService metadataService,
-        IQueryExecutionService queryService)
+        IQueryExecutionService queryService,
+        IReportEmailService reportEmailService)
     {
         _metadataService = metadataService;
         _queryService = queryService;
+        _reportEmailService = reportEmailService;
     }
 
     public async Task<IActionResult> Index()
@@ -63,5 +67,40 @@ public class EntityBuilderController : Controller
 
         var result = await _queryService.ExecuteStructuredQueryAsync(request);
         return Json(result);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SendReportEmail([FromBody] SendReportRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Sql))
+            return BadRequest(new { message = "No SQL to send." });
+
+        var token = User.FindFirstValue("AccessToken");
+        if (string.IsNullOrEmpty(token))
+            return Unauthorized(new { message = "Session expired. Please log in again." });
+
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? User.Identity?.Name;
+        if (string.IsNullOrEmpty(email))
+            return BadRequest(new { message = "Could not determine recipient email." });
+
+        var displayName = User.FindFirstValue("DisplayName") ?? email;
+
+        var reportRequest = new ReportEmailRequest
+        {
+            Sql = request.Sql,
+            Token = token,
+            RecipientEmail = email,
+            DisplayName = displayName,
+            Subject = request.Subject ?? "Entity Builder Report",
+            DapperTemplateValues = request.DapperTemplateValues ?? new()
+        };
+
+        var result = await _reportEmailService.SendReportAsync(reportRequest);
+
+        if (result.Code != 1)
+            return BadRequest(new { message = result.ShortDescription });
+
+        return Json(new { message = result.ShortDescription });
     }
 }

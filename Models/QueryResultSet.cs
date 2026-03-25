@@ -8,6 +8,7 @@ public class QueryResultSet
     public long ExecutionTimeMs { get; set; }
     public string? ErrorMessage { get; set; }
     public string? GeneratedSql { get; set; }
+    public Dictionary<string, string> Parameters { get; set; } = new();
     public bool IsSuccess => ErrorMessage is null;
 
     public int TotalRows { get; set; }

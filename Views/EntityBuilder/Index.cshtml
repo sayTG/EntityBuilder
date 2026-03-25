@@ -113,11 +113,19 @@
     <button id="executeQuery" class="eb-btn-execute" disabled>
         <i class="bi bi-play-fill me-2"></i> Execute Query
     </button>
+    <button id="sendReportEmail" class="eb-btn-execute" style="background:#374151;" disabled>
+        <i class="bi bi-envelope-fill me-2"></i> Send Report to Email
+    </button>
     <div id="loadingSpinner" class="eb-spinner d-none">
         <div class="spinner-border spinner-border-sm" role="status"></div>
         <span>Running query...</span>
     </div>
+    <div id="reportSpinner" class="eb-spinner d-none">
+        <div class="spinner-border spinner-border-sm" role="status"></div>
+        <span>Sending report...</span>
+    </div>
 </div>
+<div id="reportFeedback" class="d-none" style="margin-top:0.5rem;padding:0.5rem 1rem;border-radius:6px;font-size:0.875rem;"></div>
 
 <!-- Generated SQL -->
 <div id="sqlSection" class="d-none">

@@ -314,6 +314,10 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
             var whereClause = whereParts.Count > 0 ? "WHERE " + string.Join(" ", whereParts) : "";
             var joinSql = string.Join("\n", joinClauses);
 
+            // Expose parameters for report email
+            foreach (var (name, value) in parameters)
+                result.Parameters[name.TrimStart('@')] = value?.ToString() ?? "";
+
             // Build GROUP BY clause
             var allowedAggregateFunctions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {

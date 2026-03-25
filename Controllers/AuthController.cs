@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using EntityBuilder.Configuration;
+using EntityBuilder.Models;
 using EntityBuilder.ViewModels;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -16,6 +17,11 @@ public class AuthController : Controller
 {
     private readonly AuthSettings _authSettings;
     private readonly IHttpClientFactory _httpClientFactory;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public AuthController(IOptions<AuthSettings> authSettings, IHttpClientFactory httpClientFactory)
     {
@@ -42,70 +48,50 @@ public class AuthController : Controller
         try
         {
             var client = _httpClientFactory.CreateClient();
-            var payload = new
-            {
-                username = model.Username,
-                password = model.Password,
-                clientId = _authSettings.ClientId
-            };
-
+            var payload = new { username = model.Username, password = model.Password, clientId = _authSettings.ClientId };
             var json = JsonSerializer.Serialize(payload);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             var response = await client.PostAsync($"{_authSettings.BaseUrl}/Accounts/Login", content);
             var responseBody = await response.Content.ReadAsStringAsync();
 
-            var result = JsonSerializer.Deserialize<JsonElement>(responseBody);
-
-            var code = result.GetProperty("code").GetInt32();
-            if (code != 1)
+            var result = JsonSerializer.Deserialize<ApiResponse<LoginData>>(responseBody, JsonOptions);
+            if (result is null || result.Code != 1 || result.Data is null)
             {
-                var desc = result.TryGetProperty("shortDescription", out var d) ? d.GetString() : "Login failed.";
-                model.ErrorMessage = desc ?? "Login failed.";
+                model.ErrorMessage = result?.ShortDescription ?? "Login failed.";
                 return View(model);
             }
 
-            var data = result.GetProperty("data");
-            var firstName = data.GetProperty("firstName").GetString() ?? "";
-            var lastName = data.GetProperty("lastName").GetString() ?? "";
-            var userName = data.GetProperty("userName").GetString() ?? model.Username;
+            var data = result.Data;
+            var email = data.Email ?? data.UserName;
 
             var claims = new List<Claim>
             {
-                new(ClaimTypes.Name, userName),
-                new("DisplayName", $"{firstName} {lastName}".Trim())
+                new(ClaimTypes.Name, data.UserName),
+                new(ClaimTypes.Email, email),
+                new("DisplayName", $"{data.FirstName} {data.LastName}".Trim()),
+                new("AccessToken", data.Token)
             };
 
-            // Add roles
-            if (data.TryGetProperty("rolesDTOs", out var roles))
-            {
-                foreach (var role in roles.EnumerateArray())
-                {
-                    var roleName = role.GetProperty("name").GetString();
-                    if (!string.IsNullOrEmpty(roleName))
-                        claims.Add(new Claim(ClaimTypes.Role, roleName));
-                }
-            }
-            else
-            {
+            if (data.RolesDTOs.Count == 0)
                 throw new Exception("Could not get valid roles");
+
+            foreach (var role in data.RolesDTOs)
+            {
+                if (!string.IsNullOrEmpty(role.Name))
+                    claims.Add(new Claim(ClaimTypes.Role, role.Name));
             }
 
-            var allowedRoles = _authSettings.AllowedRoles;
-            if (allowedRoles.Count > 0 && !claims.Any(c => c.Type == ClaimTypes.Role && allowedRoles.Contains(c.Value)))
+            if (_authSettings.AllowedRoles.Count > 0 &&
+                !claims.Any(c => c.Type == ClaimTypes.Role && _authSettings.AllowedRoles.Contains(c.Value)))
             {
-                model.ErrorMessage = $"Access denied. Required role(s): {string.Join(", ", allowedRoles)}";
+                model.ErrorMessage = $"Access denied. Required role(s): {string.Join(", ", _authSettings.AllowedRoles)}";
                 return View(model);
             }
 
-            // Parse token expiration to auto-expire the session
             DateTimeOffset? expiresAt = null;
-            if (data.TryGetProperty("tokenExpiration", out var tokenExp))
-            {
-                var expStr = tokenExp.GetString();
-                if (DateTimeOffset.TryParse(expStr, out var parsed))
-                    expiresAt = parsed;
-            }
+            if (DateTimeOffset.TryParse(data.TokenExpiration, out var parsed))
+                expiresAt = parsed;
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var principal = new ClaimsPrincipal(identity);

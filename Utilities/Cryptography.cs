@@ -10,7 +10,7 @@ namespace EntityBuilder.Utilities
             {
                 if (string.IsNullOrEmpty(plainText)) return plainText;
 
-                byte[] key = Convert.FromBase64String(base64Key);
+                byte[] key = Convert.FromBase64String(base64Key).Take(32).ToArray();
                 byte[] iv;
                 byte[] encrypted;
 

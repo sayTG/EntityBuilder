@@ -1,6 +1,7 @@
 using EntityBuilder.Configuration;
 using EntityBuilder.Data;
 using EntityBuilder.Interfaces;
+using EntityBuilder.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,10 @@ builder.Services.Configure<DatabaseSettings>(
     builder.Configuration.GetSection(DatabaseSettings.SectionName));
 builder.Services.Configure<AuthSettings>(
     builder.Configuration.GetSection(AuthSettings.SectionName));
+builder.Services.Configure<CryptographySettings>(
+    builder.Configuration.GetSection(CryptographySettings.SectionName));
+builder.Services.Configure<MessagingSettings>(
+    builder.Configuration.GetSection(MessagingSettings.SectionName));
 
 // Register data layer
 var providerType = builder.Configuration["DatabaseSettings:ProviderType"] ?? "SqlServer";
@@ -19,6 +24,9 @@ if (providerType == "SqlServer")
     builder.Services.AddScoped<IDatabaseMetadataService, SqlServerMetadataService>();
     builder.Services.AddScoped<IQueryExecutionService, SqlServerQueryExecutionService>();
 }
+
+// Services
+builder.Services.AddScoped<IReportEmailService, ReportEmailService>();
 
 // HTTP client for external API calls
 builder.Services.AddHttpClient();
