@@ -647,12 +647,15 @@ document.addEventListener('DOMContentLoaded', function () {
     sendReportBtn?.addEventListener('click', async function () {
         reportFeedback.classList.add('d-none');
         const sqlPreview = document.getElementById('sqlPreview');
-        const sql = sqlPreview?.textContent?.trim();
+        const rawSql = sqlPreview?.textContent?.trim();
 
-        if (!sql) {
+        if (!rawSql) {
             showReportFeedback('Please execute a query first to generate SQL.', true);
             return;
         }
+
+        // Remove OFFSET/FETCH pagination so the report includes all records
+        const sql = rawSql.replace(/\s+OFFSET\s+\d+\s+ROWS\s+FETCH\s+NEXT\s+\d+\s+ROWS\s+ONLY/gi, '');
 
         sendReportBtn.disabled = true;
         reportSpinner.classList.remove('d-none');
