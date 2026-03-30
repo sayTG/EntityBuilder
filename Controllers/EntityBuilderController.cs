@@ -86,12 +86,14 @@ public class EntityBuilderController : Controller
 
         var displayName = User.FindFirstValue("DisplayName") ?? email;
 
+        var recipientEmail = string.IsNullOrWhiteSpace(request.RecipientEmail) ? email : request.RecipientEmail;
+
         var reportRequest = new ReportEmailRequest
         {
             Sql = request.Sql,
             Token = token,
-            RecipientEmail = email,
-            DisplayName = displayName,
+            RecipientEmail = recipientEmail,
+            DisplayName = recipientEmail != email ? recipientEmail : displayName,
             Subject = request.Subject ?? "Entity Builder Report",
             DapperTemplateValues = request.DapperTemplateValues ?? new()
         };

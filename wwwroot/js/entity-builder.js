@@ -644,7 +644,25 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!isError) setTimeout(() => reportFeedback.classList.add('d-none'), 5000);
     }
 
-    sendReportBtn?.addEventListener('click', async function () {
+    // ========== SEND REPORT MODAL ==========
+    const sendReportModal = document.getElementById('sendReportModal');
+    const sendReportModalInstance = sendReportModal ? new bootstrap.Modal(sendReportModal) : null;
+    const sendToLoginCheckbox = document.getElementById('sendToLoginEmail');
+    const customEmailGroup = document.getElementById('customEmailGroup');
+    const customRecipientEmail = document.getElementById('customRecipientEmail');
+    const reportSubjectInput = document.getElementById('reportSubject');
+
+    sendToLoginCheckbox?.addEventListener('change', function () {
+        if (this.checked) {
+            customEmailGroup.classList.add('d-none');
+            customRecipientEmail.value = '';
+        } else {
+            customEmailGroup.classList.remove('d-none');
+            customRecipientEmail.focus();
+        }
+    });
+
+    sendReportBtn?.addEventListener('click', function () {
         reportFeedback.classList.add('d-none');
         const sqlPreview = document.getElementById('sqlPreview');
         const rawSql = sqlPreview?.textContent?.trim();
@@ -654,26 +672,61 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // Remove OFFSET/FETCH pagination so the report includes all records
+        // Reset modal to defaults
+        reportSubjectInput.value = 'Entity Builder Report';
+        sendToLoginCheckbox.checked = true;
+        customEmailGroup.classList.add('d-none');
+        customRecipientEmail.value = '';
+
+        sendReportModalInstance.show();
+    });
+
+    document.getElementById('confirmSendReport')?.addEventListener('click', async function () {
+        const sqlPreview = document.getElementById('sqlPreview');
+        const rawSql = sqlPreview?.textContent?.trim();
         const sql = rawSql.replace(/\s+OFFSET\s+\d+\s+ROWS\s+FETCH\s+NEXT\s+\d+\s+ROWS\s+ONLY/gi, '');
 
+        const subject = reportSubjectInput.value.trim();
+        if (!subject) {
+            reportSubjectInput.classList.add('is-invalid');
+            return;
+        }
+        reportSubjectInput.classList.remove('is-invalid');
+
+        const useLoginEmail = sendToLoginCheckbox.checked;
+        let recipientEmail = null;
+
+        if (!useLoginEmail) {
+            recipientEmail = customRecipientEmail.value.trim();
+            if (!recipientEmail) {
+                customRecipientEmail.classList.add('is-invalid');
+                return;
+            }
+            customRecipientEmail.classList.remove('is-invalid');
+        }
+
+        sendReportModalInstance.hide();
         sendReportBtn.disabled = true;
         reportSpinner.classList.remove('d-none');
 
         try {
+            const body = {
+                sql,
+                subject,
+                dapperTemplateValues: lastQueryParameters || {}
+            };
+            if (recipientEmail) body.recipientEmail = recipientEmail;
+
             const resp = await fetch('/EntityBuilder/SendReportEmail', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': getAntiForgeryToken() },
-                body: JSON.stringify({
-                    sql,
-                    dapperTemplateValues: lastQueryParameters || {}
-                })
+                body: JSON.stringify(body)
             });
 
             const result = await resp.json();
 
             if (resp.ok) {
-                showReportFeedback('Report sent successfully to your email.', false);
+                showReportFeedback('Report sent successfully!', false);
             } else {
                 showReportFeedback(result.message || 'Failed to send report.', true);
             }
