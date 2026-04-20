@@ -48,7 +48,7 @@ public class AuthController : Controller
         try
         {
             var client = _httpClientFactory.CreateClient();
-            var payload = new { username = model.Username, password = model.Password, clientId = _authSettings.ClientId };
+            var payload = new { username = model.Username, password = model.Password, clientId = _authSettings.ClientId, loginClient = "EntityBuilder" };
             var json = JsonSerializer.Serialize(payload);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
