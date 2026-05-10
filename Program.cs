@@ -3,6 +3,7 @@ using EntityBuilder.Data;
 using EntityBuilder.Interfaces;
 using EntityBuilder.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,12 @@ builder.Services.Configure<CryptographySettings>(
     builder.Configuration.GetSection(CryptographySettings.SectionName));
 builder.Services.Configure<MessagingSettings>(
     builder.Configuration.GetSection(MessagingSettings.SectionName));
+builder.Services.Configure<RedisSettings>(
+    builder.Configuration.GetSection(RedisSettings.SectionName));
+
+// Redis
+var redisConnectionString = builder.Configuration[$"{RedisSettings.SectionName}:ConnectionString"] ?? "localhost:6379";
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
 
 // Register data layer
 var providerType = builder.Configuration["DatabaseSettings:ProviderType"] ?? "SqlServer";
@@ -27,6 +34,7 @@ if (providerType == "SqlServer")
 
 // Services
 builder.Services.AddScoped<IReportEmailService, ReportEmailService>();
+builder.Services.AddScoped<IReportScheduleService, ReportScheduleService>();
 
 // HTTP client for external API calls
 builder.Services.AddHttpClient();

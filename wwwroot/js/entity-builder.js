@@ -374,7 +374,8 @@ document.addEventListener('DOMContentLoaded', function () {
         groupByContainer.innerHTML = '<p class="eb-empty-message" id="noGroupByMessage"><i class="bi bi-info-circle me-1"></i> No grouping.</p>';
         orderByContainer.innerHTML = '<p class="eb-empty-message" id="noOrderByMessage"><i class="bi bi-info-circle me-1"></i> No sorting applied.</p>';
 
-        const btns = [addJoinBtn, addWhereBtn, addGroupByBtn, addAggregateBtn, addOrderByBtn, executeBtn, sendReportBtn];
+        const scheduleReportBtn = document.getElementById('scheduleReport');
+        const btns = [addJoinBtn, addWhereBtn, addGroupByBtn, addAggregateBtn, addOrderByBtn, executeBtn, sendReportBtn, scheduleReportBtn];
         if (parsed) {
             await fetchColumns(parsed.schema, parsed.table);
             btns.forEach(b => { if (b) b.disabled = false; });
@@ -994,4 +995,201 @@ document.addEventListener('DOMContentLoaded', function () {
     // Re-render chart when column selection changes
     chartLabelSelect?.addEventListener('change', () => { if (currentView !== 'grid' && lastResultData) renderChart(currentView); });
     chartValueSelect?.addEventListener('change', () => { if (currentView !== 'grid' && lastResultData) renderChart(currentView); });
+
+    // ========== SCHEDULE REPORT ==========
+    const scheduleReportModal = document.getElementById('scheduleReportModal');
+    const scheduleReportModalInstance = scheduleReportModal ? new bootstrap.Modal(scheduleReportModal) : null;
+    const scheduleFrequencySelect = document.getElementById('scheduleFrequency');
+    const scheduleDateGroup = document.getElementById('scheduleDateGroup');
+    const scheduleDayOfWeekGroup = document.getElementById('scheduleDayOfWeekGroup');
+    const scheduleDayOfMonthGroup = document.getElementById('scheduleDayOfMonthGroup');
+    const scheduleSendToLoginCheckbox = document.getElementById('scheduleSendToLoginEmail');
+    const scheduleCustomEmailGroup = document.getElementById('scheduleCustomEmailGroup');
+    const scheduleCustomEmail = document.getElementById('scheduleCustomEmail');
+    const scheduleSubjectInput = document.getElementById('scheduleSubject');
+
+    const frequencyLabels = ['Once', 'Daily', 'Weekly', 'Monthly'];
+    const statusLabels = ['Queued', 'Sent', 'Failed', 'Cancelled'];
+    const statusColors = { 0: '#059669', 1: '#2563EB', 2: '#DC2626', 3: '#6B7280' };
+
+    // Toggle conditional fields based on frequency
+    scheduleFrequencySelect?.addEventListener('change', function () {
+        const freq = parseInt(this.value);
+        scheduleDateGroup.classList.toggle('d-none', freq !== 0);
+        scheduleDayOfWeekGroup.classList.toggle('d-none', freq !== 2);
+        scheduleDayOfMonthGroup.classList.toggle('d-none', freq !== 3);
+    });
+
+    scheduleSendToLoginCheckbox?.addEventListener('change', function () {
+        if (this.checked) {
+            scheduleCustomEmailGroup.classList.add('d-none');
+            scheduleCustomEmail.value = '';
+        } else {
+            scheduleCustomEmailGroup.classList.remove('d-none');
+            scheduleCustomEmail.focus();
+        }
+    });
+
+    // Open schedule modal
+    document.getElementById('scheduleReport')?.addEventListener('click', function () {
+        reportFeedback.classList.add('d-none');
+        const sqlPreview = document.getElementById('sqlPreview');
+        const rawSql = sqlPreview?.textContent?.trim();
+
+        if (!rawSql) {
+            showReportFeedback('Please execute a query first to generate SQL.', true);
+            return;
+        }
+
+        // Reset modal
+        scheduleSubjectInput.value = 'Entity Builder Report';
+        scheduleSendToLoginCheckbox.checked = true;
+        scheduleCustomEmailGroup.classList.add('d-none');
+        scheduleCustomEmail.value = '';
+        scheduleFrequencySelect.value = '0';
+        scheduleDateGroup.classList.remove('d-none');
+        scheduleDayOfWeekGroup.classList.add('d-none');
+        scheduleDayOfMonthGroup.classList.add('d-none');
+        document.getElementById('scheduleTime').value = '08:00';
+        document.getElementById('scheduleDate').value = '';
+        document.getElementById('scheduleDayOfMonth').value = '1';
+
+        scheduleReportModalInstance.show();
+    });
+
+    // Confirm schedule
+    document.getElementById('confirmScheduleReport')?.addEventListener('click', async function () {
+        const sqlPreview = document.getElementById('sqlPreview');
+        const rawSql = sqlPreview?.textContent?.trim();
+        const sql = rawSql.replace(/\s+OFFSET\s+\d+\s+ROWS\s+FETCH\s+NEXT\s+\d+\s+ROWS\s+ONLY/gi, '');
+
+        const subject = scheduleSubjectInput.value.trim();
+        if (!subject) {
+            scheduleSubjectInput.classList.add('is-invalid');
+            return;
+        }
+        scheduleSubjectInput.classList.remove('is-invalid');
+
+        const useLoginEmail = scheduleSendToLoginCheckbox.checked;
+        let recipientEmail = null;
+        if (!useLoginEmail) {
+            recipientEmail = scheduleCustomEmail.value.trim();
+            if (!recipientEmail) {
+                scheduleCustomEmail.classList.add('is-invalid');
+                return;
+            }
+            scheduleCustomEmail.classList.remove('is-invalid');
+        }
+
+        const frequency = parseInt(scheduleFrequencySelect.value);
+        const scheduledTime = document.getElementById('scheduleTime').value || '08:00';
+        const scheduledDate = document.getElementById('scheduleDate').value || null;
+        const dayOfWeek = frequency === 2 ? parseInt(document.getElementById('scheduleDayOfWeek').value) : null;
+        const dayOfMonth = frequency === 3 ? parseInt(document.getElementById('scheduleDayOfMonth').value) : null;
+
+        scheduleReportModalInstance.hide();
+
+        try {
+            const body = {
+                sql,
+                subject,
+                dapperTemplateValues: lastQueryParameters || {},
+                frequency,
+                scheduledTime,
+                scheduledDate,
+                dayOfWeek,
+                dayOfMonth
+            };
+            if (recipientEmail) body.recipientEmail = recipientEmail;
+
+            const resp = await fetch('/EntityBuilder/ScheduleReport', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': getAntiForgeryToken() },
+                body: JSON.stringify(body)
+            });
+
+            const result = await resp.json();
+            if (resp.ok) {
+                showReportFeedback('Report scheduled successfully!', false);
+                loadScheduledReports();
+            } else {
+                showReportFeedback(result.message || 'Failed to schedule report.', true);
+            }
+        } catch (err) {
+            showReportFeedback('Error scheduling report: ' + err.message, true);
+        }
+    });
+
+    // Load scheduled reports
+    async function loadScheduledReports() {
+        const emptyMsg = document.getElementById('scheduledReportsEmpty');
+        const tableContainer = document.getElementById('scheduledReportsTableContainer');
+        const tbody = document.getElementById('scheduledReportsBody');
+
+        try {
+            const resp = await fetch('/EntityBuilder/ScheduledReports');
+            if (!resp.ok) return;
+
+            const reports = await resp.json();
+            const activeReports = reports.filter(r => r.status !== 3);
+
+            if (activeReports.length === 0) {
+                emptyMsg.style.display = '';
+                tableContainer.style.display = 'none';
+                return;
+            }
+
+            emptyMsg.style.display = 'none';
+            tableContainer.style.display = '';
+
+            tbody.innerHTML = activeReports.map(r => {
+                const nextRun = new Date(r.nextRun).toLocaleString();
+                const statusColor = statusColors[r.status] || '#6B7280';
+                const statusLabel = statusLabels[r.status] || 'Unknown';
+                const freqLabel = frequencyLabels[r.frequency] || 'Unknown';
+                const canCancel = r.status === 0;
+                return `<tr>
+                    <td style="padding:0.5rem 0.75rem;">${escapeHtml(r.subject)}</td>
+                    <td style="padding:0.5rem 0.75rem;">${escapeHtml(r.recipientEmail)}</td>
+                    <td style="padding:0.5rem 0.75rem;">${freqLabel}</td>
+                    <td style="padding:0.5rem 0.75rem;">${nextRun}</td>
+                    <td style="padding:0.5rem 0.75rem;"><span style="color:${statusColor};font-weight:600;">${statusLabel}</span></td>
+                    <td style="padding:0.5rem 0.75rem;">${canCancel ? `<button class="btn btn-sm btn-outline-danger cancel-schedule-btn" data-id="${r.id}"><i class="bi bi-x-circle me-1"></i>Cancel</button>` : ''}</td>
+                </tr>`;
+            }).join('');
+        } catch (err) {
+            console.error('Failed to load scheduled reports:', err);
+        }
+    }
+
+    // Cancel scheduled report
+    document.getElementById('scheduledReportsBody')?.addEventListener('click', async function (e) {
+        const btn = e.target.closest('.cancel-schedule-btn');
+        if (!btn) return;
+
+        const id = btn.dataset.id;
+        if (!confirm('Cancel this scheduled report?')) return;
+
+        try {
+            const resp = await fetch(`/EntityBuilder/CancelScheduledReport/${id}`, {
+                method: 'DELETE',
+                headers: { 'RequestVerificationToken': getAntiForgeryToken() }
+            });
+
+            if (resp.ok) {
+                showReportFeedback('Scheduled report cancelled.', false);
+                loadScheduledReports();
+            } else {
+                const result = await resp.json();
+                showReportFeedback(result.message || 'Failed to cancel.', true);
+            }
+        } catch (err) {
+            showReportFeedback('Error cancelling report: ' + err.message, true);
+        }
+    });
+
+    document.getElementById('refreshScheduledReports')?.addEventListener('click', loadScheduledReports);
+
+    // Load on page init
+    loadScheduledReports();
 });
