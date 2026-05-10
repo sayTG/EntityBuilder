@@ -34,7 +34,8 @@ public class ReportEmailService : IReportEmailService
 
         var payload = new
         {
-            receipientsEmailAddresses = new[] { request.RecipientEmail },
+            receipientsEmailAddresses = request.RecipientEmail
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             subject = request.Subject,
             emailTemplateName = "Report.html",
             fullName = request.DisplayName,

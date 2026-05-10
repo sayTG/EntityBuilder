@@ -150,8 +150,9 @@
                     </div>
                 </div>
                 <div class="mb-3 d-none" id="customEmailGroup">
-                    <label for="customRecipientEmail" class="form-label fw-semibold">Recipient Email</label>
-                    <input type="email" class="form-control" id="customRecipientEmail" placeholder="Enter recipient email address">
+                    <label for="customRecipientEmail" class="form-label fw-semibold">Recipient Email(s)</label>
+                    <input type="text" class="form-control" id="customRecipientEmail" placeholder="Enter email addresses separated by commas">
+                    <div class="form-text">Separate multiple emails with commas</div>
                 </div>
             </div>
             <div class="modal-footer" style="border-top:1px solid #e5e7eb;">
@@ -168,7 +169,7 @@
 <div class="modal fade" id="scheduleReportModal" tabindex="-1" aria-labelledby="scheduleReportModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content" style="border-radius:12px;border:none;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
-            <div class="modal-header" style="background:#1D4ED8;color:#fff;border-radius:12px 12px 0 0;border-bottom:none;">
+            <div class="modal-header" style="background:#374151;color:#fff;border-radius:12px 12px 0 0;border-bottom:none;">
                 <h5 class="modal-title" id="scheduleReportModalLabel"><i class="bi bi-clock-fill me-2"></i>Schedule Report</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -184,8 +185,9 @@
                     </div>
                 </div>
                 <div class="mb-3 d-none" id="scheduleCustomEmailGroup">
-                    <label for="scheduleCustomEmail" class="form-label fw-semibold">Recipient Email</label>
-                    <input type="email" class="form-control" id="scheduleCustomEmail" placeholder="Enter recipient email address">
+                    <label for="scheduleCustomEmail" class="form-label fw-semibold">Recipient Email(s)</label>
+                    <input type="text" class="form-control" id="scheduleCustomEmail" placeholder="Enter email addresses separated by commas">
+                    <div class="form-text">Separate multiple emails with commas</div>
                 </div>
                 <hr>
                 <div class="mb-3">
@@ -224,7 +226,7 @@
             </div>
             <div class="modal-footer" style="border-top:1px solid #e5e7eb;">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn text-white" id="confirmScheduleReport" style="background:#1D4ED8;">
+                <button type="button" class="btn text-white" id="confirmScheduleReport" style="background:#DC2626;">
                     <i class="bi bi-clock-fill me-1"></i> Schedule Report
                 </button>
             </div>
