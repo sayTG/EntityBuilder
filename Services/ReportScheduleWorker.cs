@@ -98,17 +98,18 @@ public class ReportScheduleWorker : BackgroundService
         var timeParts = (report.ScheduledTime ?? "08:00").Split(':');
         var hour = int.Parse(timeParts[0]);
         var minute = timeParts.Length > 1 ? int.Parse(timeParts[1]) : 0;
+        var offset = report.UtcOffsetMinutes;
 
         switch (report.Frequency)
         {
             case ReportFrequency.Daily:
-                var nextDaily = now.Date.AddHours(hour).AddMinutes(minute);
+                var nextDaily = now.Date.AddHours(hour).AddMinutes(minute).AddMinutes(offset);
                 if (nextDaily <= now) nextDaily = nextDaily.AddDays(1);
                 return nextDaily;
 
             case ReportFrequency.Weekly:
                 var targetDay = report.DayOfWeek ?? 1;
-                var nextWeekly = now.Date.AddHours(hour).AddMinutes(minute);
+                var nextWeekly = now.Date.AddHours(hour).AddMinutes(minute).AddMinutes(offset);
                 while ((int)nextWeekly.DayOfWeek != targetDay || nextWeekly <= now)
                     nextWeekly = nextWeekly.AddDays(1);
                 return nextWeekly;
@@ -117,7 +118,7 @@ public class ReportScheduleWorker : BackgroundService
                 var targetDayOfMonth = report.DayOfMonth ?? 1;
                 var nextMonthly = new DateTime(now.Year, now.Month,
                     Math.Min(targetDayOfMonth, DateTime.DaysInMonth(now.Year, now.Month)),
-                    hour, minute, 0, DateTimeKind.Utc);
+                    hour, minute, 0, DateTimeKind.Utc).AddMinutes(offset);
                 if (nextMonthly <= now) nextMonthly = nextMonthly.AddMonths(1);
                 return nextMonthly;
 

@@ -176,6 +176,7 @@ public class EntityBuilderController : Controller
             ScheduledDate = request.ScheduledDate,
             DayOfWeek = request.DayOfWeek,
             DayOfMonth = request.DayOfMonth,
+            UtcOffsetMinutes = request.UtcOffsetMinutes,
             Status = ReportStatus.Queued,
             NextRun = nextRun
         };

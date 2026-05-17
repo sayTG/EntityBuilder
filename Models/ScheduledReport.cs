@@ -32,6 +32,7 @@ public class ScheduledReport
     public int? DayOfWeek { get; set; }
     public int? DayOfMonth { get; set; }
     public ReportStatus Status { get; set; } = ReportStatus.Queued;
+    public int UtcOffsetMinutes { get; set; }
     public DateTime? LastRun { get; set; }
     public DateTime NextRun { get; set; }
 }
