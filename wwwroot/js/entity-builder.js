@@ -1098,7 +1098,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 scheduledTime,
                 scheduledDate,
                 dayOfWeek,
-                dayOfMonth
+                dayOfMonth,
+                utcOffsetMinutes: new Date().getTimezoneOffset()
             };
             if (recipientEmail) body.recipientEmail = recipientEmail;
 

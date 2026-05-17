@@ -61,4 +61,32 @@ public class ReportScheduleService : IReportScheduleService
         await db.HashSetAsync(key, id, json);
         return true;
     }
+
+    public async Task<List<ScheduledReport>> GetDueReportsAsync()
+    {
+        var db = _redis.GetDatabase();
+        var server = _redis.GetServers().First();
+        var dueReports = new List<ScheduledReport>();
+
+        await foreach (var key in server.KeysAsync(pattern: "scheduled-reports:*"))
+        {
+            var entries = await db.HashGetAllAsync(key);
+            foreach (var entry in entries)
+            {
+                if (entry.Value.IsNullOrEmpty) continue;
+                var report = JsonSerializer.Deserialize<ScheduledReport>(entry.Value.ToString(), JsonOptions);
+                if (report != null && report.Status == ReportStatus.Queued && report.NextRun <= DateTime.UtcNow)
+                    dueReports.Add(report);
+            }
+        }
+
+        return dueReports;
+    }
+
+    public async Task UpdateReportAsync(ScheduledReport report)
+    {
+        var db = _redis.GetDatabase();
+        var json = JsonSerializer.Serialize(report, JsonOptions);
+        await db.HashSetAsync(GetKey(report.CreatedBy), report.Id, json);
+    }
 }

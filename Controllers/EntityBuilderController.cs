@@ -129,28 +129,32 @@ public class EntityBuilderController : Controller
         var hour = int.Parse(timeParts[0]);
         var minute = timeParts.Length > 1 ? int.Parse(timeParts[1]) : 0;
 
+        // Convert local time to UTC using the client's offset
+        // JS getTimezoneOffset() returns positive for behind UTC (e.g., UTC-5 = 300, UTC+1 = -60)
+        var offsetMinutes = request.UtcOffsetMinutes;
+
         DateTime nextRun;
         switch (request.Frequency)
         {
             case ReportFrequency.Once:
                 if (!string.IsNullOrEmpty(request.ScheduledDate) && DateOnly.TryParse(request.ScheduledDate, out var date))
-                    nextRun = date.ToDateTime(new TimeOnly(hour, minute), DateTimeKind.Utc);
+                    nextRun = date.ToDateTime(new TimeOnly(hour, minute), DateTimeKind.Utc).AddMinutes(offsetMinutes);
                 else
-                    nextRun = now.Date.AddDays(1).AddHours(hour).AddMinutes(minute);
+                    nextRun = now.Date.AddDays(1).AddHours(hour).AddMinutes(minute).AddMinutes(offsetMinutes);
                 break;
             case ReportFrequency.Daily:
-                nextRun = now.Date.AddHours(hour).AddMinutes(minute);
+                nextRun = now.Date.AddHours(hour).AddMinutes(minute).AddMinutes(offsetMinutes);
                 if (nextRun <= now) nextRun = nextRun.AddDays(1);
                 break;
             case ReportFrequency.Weekly:
                 var targetDay = request.DayOfWeek ?? 1;
-                nextRun = now.Date.AddHours(hour).AddMinutes(minute);
+                nextRun = now.Date.AddHours(hour).AddMinutes(minute).AddMinutes(offsetMinutes);
                 while ((int)nextRun.DayOfWeek != targetDay || nextRun <= now)
                     nextRun = nextRun.AddDays(1);
                 break;
             case ReportFrequency.Monthly:
                 var targetDayOfMonth = request.DayOfMonth ?? 1;
-                nextRun = new DateTime(now.Year, now.Month, Math.Min(targetDayOfMonth, DateTime.DaysInMonth(now.Year, now.Month)), hour, minute, 0, DateTimeKind.Utc);
+                nextRun = new DateTime(now.Year, now.Month, Math.Min(targetDayOfMonth, DateTime.DaysInMonth(now.Year, now.Month)), hour, minute, 0, DateTimeKind.Utc).AddMinutes(offsetMinutes);
                 if (nextRun <= now) nextRun = nextRun.AddMonths(1);
                 break;
             default:

@@ -45,7 +45,10 @@ public class ReportEmailService : IReportEmailService
         };
 
         var client = _httpClientFactory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", request.Token);
+        if (!string.IsNullOrEmpty(request.Token))
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", request.Token);
+        else
+            client.DefaultRequestHeaders.Add("external-api-key", _messagingSettings.ExternalApiKey);
 
         var json = JsonSerializer.Serialize(payload);
         var content = new StringContent(json, Encoding.UTF8, "application/json");

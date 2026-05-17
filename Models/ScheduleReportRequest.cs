@@ -11,4 +11,5 @@ public class ScheduleReportRequest
     public string? ScheduledDate { get; set; }
     public int? DayOfWeek { get; set; }
     public int? DayOfMonth { get; set; }
+    public int UtcOffsetMinutes { get; set; }
 }

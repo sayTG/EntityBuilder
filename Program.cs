@@ -39,6 +39,9 @@ builder.Services.AddScoped<IReportScheduleService, ReportScheduleService>();
 // HTTP client for external API calls
 builder.Services.AddHttpClient();
 
+// Background worker for scheduled reports
+builder.Services.AddHostedService<ReportScheduleWorker>();
+
 // Authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
