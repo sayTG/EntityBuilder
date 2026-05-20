@@ -1,11 +1,10 @@
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
 using EntityBuilder.Configuration;
 using EntityBuilder.Interfaces;
 using EntityBuilder.Models;
 using EntityBuilder.Utilities;
 using Microsoft.Extensions.Options;
+using System.Text;
+using System.Text.Json;
 
 namespace EntityBuilder.Services;
 
@@ -45,10 +44,7 @@ public class ReportEmailService : IReportEmailService
         };
 
         var client = _httpClientFactory.CreateClient();
-        if (!string.IsNullOrEmpty(request.Token))
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", request.Token);
-        else
-            client.DefaultRequestHeaders.Add("external-api-key", _messagingSettings.ExternalApiKey);
+        client.DefaultRequestHeaders.Add("external-api-key", _messagingSettings.ExternalApiKey);
 
         var json = JsonSerializer.Serialize(payload);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
