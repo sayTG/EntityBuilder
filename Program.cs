@@ -23,9 +23,15 @@ builder.Services.Configure<RedisSettings>(
 var redisConnectionString = builder.Configuration[$"{RedisSettings.SectionName}:ConnectionString"] ?? "localhost:6379";
 builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
 
-// Register data layer
+// Register data layer. Defaults to SqlServer for any unrecognized provider.
 var providerType = builder.Configuration["DatabaseSettings:ProviderType"] ?? "SqlServer";
-if (providerType == "SqlServer")
+if (string.Equals(providerType, "Sqlite", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddSingleton<IDbConnectionFactory, SqliteConnectionFactory>();
+    builder.Services.AddScoped<IDatabaseMetadataService, SqliteMetadataService>();
+    builder.Services.AddScoped<IQueryExecutionService, SqliteQueryExecutionService>();
+}
+else
 {
     builder.Services.AddSingleton<IDbConnectionFactory, SqlServerConnectionFactory>();
     builder.Services.AddScoped<IDatabaseMetadataService, SqlServerMetadataService>();
