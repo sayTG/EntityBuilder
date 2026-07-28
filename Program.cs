@@ -3,6 +3,7 @@ using EntityBuilder.Data;
 using EntityBuilder.Interfaces;
 using EntityBuilder.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -48,6 +49,8 @@ builder.Services.AddHttpClient();
 // Background worker for scheduled reports
 builder.Services.AddHostedService<ReportScheduleWorker>();
 
+builder.Host.UseWindowsService();
+
 // Authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -71,6 +74,11 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
+
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 
 app.UseHttpsRedirection();
 app.UseRouting();
