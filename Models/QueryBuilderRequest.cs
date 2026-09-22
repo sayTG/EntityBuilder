@@ -50,6 +50,11 @@ public class WhereCondition
     public string? Value { get; set; }
 
     public string Connector { get; set; } = "AND";
+
+    // Kind of value to use at execution time.
+    // "Literal" (default) uses Value as a parameter; "Now" inlines the DB's current-datetime function
+    // so scheduled reports pick fresh time on every run instead of freezing it at build time.
+    public string ValueKind { get; set; } = "Literal";
 }
 
 public class ColumnSelection

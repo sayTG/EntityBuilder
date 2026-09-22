@@ -451,14 +451,45 @@ document.addEventListener('DOMContentLoaded', function () {
                 <option value="IS NULL">IS NULL</option><option value="IS NOT NULL">IS NOT NULL</option>
             </select>
             <input type="text" class="where-value" placeholder="Value">
+            <button type="button" class="eb-btn-now" title="Use current date/time (resolved by DB at run time)" aria-pressed="false">NOW</button>
             <button class="eb-btn-remove" title="Remove"><i class="bi bi-x"></i></button>`;
         whereContainer.appendChild(row);
         initSearchableSelects(row);
 
         const opSel = row.querySelector('.where-operator');
         const valInput = row.querySelector('.where-value');
+        const nowBtn = row.querySelector('.eb-btn-now');
+
+        const isNoValueOp = () => opSel.value === 'IS NULL' || opSel.value === 'IS NOT NULL';
+        const isMultiValueOp = () => opSel.value === 'IN';
+
+        const applyNowState = () => {
+            const on = nowBtn.getAttribute('aria-pressed') === 'true';
+            if (on) {
+                valInput.value = '';
+                valInput.placeholder = 'NOW() — resolved at run time';
+                valInput.disabled = true;
+            } else {
+                valInput.placeholder = 'Value';
+                valInput.disabled = false;
+            }
+        };
+
+        nowBtn.addEventListener('click', function () {
+            if (isNoValueOp() || isMultiValueOp()) return;
+            const next = nowBtn.getAttribute('aria-pressed') !== 'true';
+            nowBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
+            applyNowState();
+        });
+
         opSel.addEventListener('change', function () {
-            valInput.style.display = (this.value === 'IS NULL' || this.value === 'IS NOT NULL') ? 'none' : '';
+            const noVal = isNoValueOp();
+            valInput.style.display = noVal ? 'none' : '';
+            nowBtn.style.display = (noVal || isMultiValueOp()) ? 'none' : '';
+            if (noVal || isMultiValueOp()) {
+                nowBtn.setAttribute('aria-pressed', 'false');
+                applyNowState();
+            }
             if (valInput.style.display === 'none') valInput.value = '';
         });
 
@@ -571,10 +602,12 @@ document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.qb-where-row').forEach(row => {
             const col = row.querySelector('.where-column').value;
             if (!col) return;
+            const useNow = row.querySelector('.eb-btn-now')?.getAttribute('aria-pressed') === 'true';
             request.whereConditions.push({
                 column: col, operator: row.querySelector('.where-operator').value,
-                value: row.querySelector('.where-value').value || null,
-                connector: row.querySelector('.where-connector').value
+                value: useNow ? null : (row.querySelector('.where-value').value || null),
+                connector: row.querySelector('.where-connector').value,
+                valueKind: useNow ? 'Now' : 'Literal'
             });
         });
 

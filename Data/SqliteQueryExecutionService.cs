@@ -285,6 +285,11 @@ public partial class SqliteQueryExecutionService : IQueryExecutionService
                     }
                     clause = $"[{colAlias}].[{colParts[2]}] IN ({string.Join(", ", inParams)})";
                 }
+                else if (string.Equals(cond.ValueKind, "Now", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Inline the DB function so scheduled reports resolve time at each run, not at build time.
+                    clause = $"[{colAlias}].[{colParts[2]}] {cond.Operator} datetime('now','localtime')";
+                }
                 else
                 {
                     var pName = $"@p{paramIndex++}";
