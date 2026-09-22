@@ -19,7 +19,15 @@ public enum ReportStatus
 public class ScheduledReport
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
+
+    // Sql is server-generated from QueryDefinition on every create/edit — clients cannot supply
+    // it directly. Kept as a stored field so the worker can dispatch without re-running the builder.
     public string Sql { get; set; } = "";
+
+    // Structured query definition used to regenerate SQL on edit and to rehydrate the edit UI.
+    // Nullable for legacy rows created before this field existed — those cannot be edited via the UI.
+    public QueryBuilderRequest? QueryDefinition { get; set; }
+
     public string Subject { get; set; } = "Entity Builder Report";
     public string RecipientEmail { get; set; } = "";
     public string DisplayName { get; set; } = "";

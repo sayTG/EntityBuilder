@@ -93,7 +93,17 @@ public partial class SqliteQueryExecutionService : IQueryExecutionService
         return await ExecuteSelectAsync(sql, maxRows);
     }
 
-    public async Task<QueryResultSet> ExecuteStructuredQueryAsync(QueryBuilderRequest request)
+    public async Task<QueryResultSet> BuildQueryAsync(QueryBuilderRequest request)
+    {
+        // buildOnly=true skips the count/data execution and LIMIT/OFFSET pagination,
+        // producing the full unpaginated SELECT for scheduled reports.
+        return await ExecuteStructuredQueryAsync(request, buildOnly: true);
+    }
+
+    public Task<QueryResultSet> ExecuteStructuredQueryAsync(QueryBuilderRequest request)
+        => ExecuteStructuredQueryAsync(request, buildOnly: false);
+
+    private async Task<QueryResultSet> ExecuteStructuredQueryAsync(QueryBuilderRequest request, bool buildOnly)
     {
         var result = new QueryResultSet
         {
@@ -290,6 +300,10 @@ public partial class SqliteQueryExecutionService : IQueryExecutionService
                     // Inline the DB function so scheduled reports resolve time at each run, not at build time.
                     clause = $"[{colAlias}].[{colParts[2]}] {cond.Operator} datetime('now','localtime')";
                 }
+                else if (string.Equals(cond.ValueKind, "Today", StringComparison.OrdinalIgnoreCase))
+                {
+                    clause = $"[{colAlias}].[{colParts[2]}] {cond.Operator} date('now','localtime')";
+                }
                 else
                 {
                     var pName = $"@p{paramIndex++}";
@@ -415,51 +429,56 @@ public partial class SqliteQueryExecutionService : IQueryExecutionService
                 ? "ORDER BY " + string.Join(", ", orderByParts)
                 : "";
 
-            // Count query — use SELECT 1 to avoid duplicate column name / unnamed column errors
-            var countInner = hasGroupBy
-                ? $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause} {groupByClause}"
-                : $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause}";
-            var countSql = $"SELECT COUNT(*) FROM ({countInner}) AS __count";
-
-            // Data query with pagination (SQLite dialect: LIMIT ... OFFSET ...)
             var dataQuery = $"SELECT {selectClause} FROM {fromClause} {joinSql} {whereClause} {groupByClause}";
-            var offset = (request.Page - 1) * result.PageSize;
-            var dataSql = $"{dataQuery} {orderByClause} LIMIT {result.PageSize} OFFSET {offset}";
 
-            // Store generated SQL for display
-            result.GeneratedSql = dataSql;
-
-            // Execute
-            using var connection = _connectionFactory.CreateConnection();
-            connection.Open();
-
-            using (var countCmd = connection.CreateCommand())
+            if (buildOnly)
             {
-                countCmd.CommandText = countSql;
-                countCmd.CommandTimeout = 120;
-                AddParameters(countCmd, parameters);
-                result.TotalRows = Convert.ToInt32(countCmd.ExecuteScalar()!);
+                // Report path: full unpaginated SELECT — no LIMIT/OFFSET, no execution.
+                result.GeneratedSql = $"{dataQuery} {orderByClause}".Trim();
             }
-
-            using (var dataCmd = connection.CreateCommand())
+            else
             {
-                dataCmd.CommandText = dataSql;
-                dataCmd.CommandTimeout = 120;
-                AddParameters(dataCmd, parameters);
+                var countInner = hasGroupBy
+                    ? $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause} {groupByClause}"
+                    : $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause}";
+                var countSql = $"SELECT COUNT(*) FROM ({countInner}) AS __count";
 
-                using var reader = dataCmd.ExecuteReader();
-                for (int i = 0; i < reader.FieldCount; i++)
-                    result.Columns.Add(reader.GetName(i));
+                var offset = (request.Page - 1) * result.PageSize;
+                var dataSql = $"{dataQuery} {orderByClause} LIMIT {result.PageSize} OFFSET {offset}";
 
-                while (reader.Read())
+                result.GeneratedSql = dataSql;
+
+                using var connection = _connectionFactory.CreateConnection();
+                connection.Open();
+
+                using (var countCmd = connection.CreateCommand())
                 {
-                    var row = new Dictionary<string, object?>();
-                    for (int i = 0; i < reader.FieldCount; i++)
-                        row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-                    result.Rows.Add(row);
+                    countCmd.CommandText = countSql;
+                    countCmd.CommandTimeout = 120;
+                    AddParameters(countCmd, parameters);
+                    result.TotalRows = Convert.ToInt32(countCmd.ExecuteScalar()!);
                 }
 
-                result.TotalRowsReturned = result.Rows.Count;
+                using (var dataCmd = connection.CreateCommand())
+                {
+                    dataCmd.CommandText = dataSql;
+                    dataCmd.CommandTimeout = 120;
+                    AddParameters(dataCmd, parameters);
+
+                    using var reader = dataCmd.ExecuteReader();
+                    for (int i = 0; i < reader.FieldCount; i++)
+                        result.Columns.Add(reader.GetName(i));
+
+                    while (reader.Read())
+                    {
+                        var row = new Dictionary<string, object?>();
+                        for (int i = 0; i < reader.FieldCount; i++)
+                            row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        result.Rows.Add(row);
+                    }
+
+                    result.TotalRowsReturned = result.Rows.Count;
+                }
             }
         }
         catch (Exception ex)

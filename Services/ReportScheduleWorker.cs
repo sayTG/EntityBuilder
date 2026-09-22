@@ -1,5 +1,6 @@
 using EntityBuilder.Interfaces;
 using EntityBuilder.Models;
+using EntityBuilder.Utilities;
 
 namespace EntityBuilder.Services;
 
@@ -72,7 +73,7 @@ public class ReportScheduleWorker : BackgroundService
                     }
                     else
                     {
-                        report.NextRun = CalculateNextRun(report);
+                        report.NextRun = ScheduleNextRunCalculator.Compute(report, DateTime.UtcNow);
                     }
                     _logger.LogInformation("Report {Id} sent successfully.", report.Id);
                 }
@@ -92,38 +93,4 @@ public class ReportScheduleWorker : BackgroundService
         }
     }
 
-    private static DateTime CalculateNextRun(ScheduledReport report)
-    {
-        var now = DateTime.UtcNow;
-        var timeParts = (report.ScheduledTime ?? "08:00").Split(':');
-        var hour = int.Parse(timeParts[0]);
-        var minute = timeParts.Length > 1 ? int.Parse(timeParts[1]) : 0;
-        var offset = report.UtcOffsetMinutes;
-
-        switch (report.Frequency)
-        {
-            case ReportFrequency.Daily:
-                var nextDaily = now.Date.AddHours(hour).AddMinutes(minute).AddMinutes(offset);
-                if (nextDaily <= now) nextDaily = nextDaily.AddDays(1);
-                return nextDaily;
-
-            case ReportFrequency.Weekly:
-                var targetDay = report.DayOfWeek ?? 1;
-                var nextWeekly = now.Date.AddHours(hour).AddMinutes(minute).AddMinutes(offset);
-                while ((int)nextWeekly.DayOfWeek != targetDay || nextWeekly <= now)
-                    nextWeekly = nextWeekly.AddDays(1);
-                return nextWeekly;
-
-            case ReportFrequency.Monthly:
-                var targetDayOfMonth = report.DayOfMonth ?? 1;
-                var nextMonthly = new DateTime(now.Year, now.Month,
-                    Math.Min(targetDayOfMonth, DateTime.DaysInMonth(now.Year, now.Month)),
-                    hour, minute, 0, DateTimeKind.Utc).AddMinutes(offset);
-                if (nextMonthly <= now) nextMonthly = nextMonthly.AddMonths(1);
-                return nextMonthly;
-
-            default:
-                return now.AddDays(1);
-        }
-    }
 }

@@ -101,7 +101,17 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
         return await ExecuteSelectAsync(sql, maxRows);
     }
 
-    public async Task<QueryResultSet> ExecuteStructuredQueryAsync(QueryBuilderRequest request)
+    public async Task<QueryResultSet> BuildQueryAsync(QueryBuilderRequest request)
+    {
+        // buildOnly=true skips the count/data execution and OFFSET/FETCH pagination,
+        // producing the full unpaginated SELECT for scheduled reports.
+        return await ExecuteStructuredQueryAsync(request, buildOnly: true);
+    }
+
+    public Task<QueryResultSet> ExecuteStructuredQueryAsync(QueryBuilderRequest request)
+        => ExecuteStructuredQueryAsync(request, buildOnly: false);
+
+    private async Task<QueryResultSet> ExecuteStructuredQueryAsync(QueryBuilderRequest request, bool buildOnly)
     {
         var result = new QueryResultSet
         {
@@ -298,6 +308,10 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
                     // Inline the DB function so scheduled reports resolve time at each run, not at build time.
                     clause = $"[{colAlias}].[{colParts[2]}] {cond.Operator} GETDATE()";
                 }
+                else if (string.Equals(cond.ValueKind, "Today", StringComparison.OrdinalIgnoreCase))
+                {
+                    clause = $"[{colAlias}].[{colParts[2]}] {cond.Operator} CAST(GETDATE() AS DATE)";
+                }
                 else
                 {
                     var pName = $"@p{paramIndex++}";
@@ -422,51 +436,57 @@ public partial class SqlServerQueryExecutionService : IQueryExecutionService
                 ? "ORDER BY " + string.Join(", ", orderByParts)
                 : "ORDER BY (SELECT NULL)";
 
-            // Count query — use SELECT 1 to avoid duplicate column name / unnamed column errors
-            var countInner = hasGroupBy
-                ? $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause} {groupByClause}"
-                : $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause}";
-            var countSql = $"SELECT COUNT(*) FROM ({countInner}) AS __count";
-
-            // Data query with pagination
             var dataQuery = $"SELECT {selectClause} FROM {fromClause} {joinSql} {whereClause} {groupByClause}";
-            var offset = (request.Page - 1) * result.PageSize;
-            var dataSql = $"{dataQuery} {orderByClause} OFFSET {offset} ROWS FETCH NEXT {result.PageSize} ROWS ONLY";
 
-            // Store generated SQL for display
-            result.GeneratedSql = dataSql;
-
-            // Execute
-            using var connection = _connectionFactory.CreateConnection();
-            connection.Open();
-
-            using (var countCmd = connection.CreateCommand())
+            if (buildOnly)
             {
-                countCmd.CommandText = AppendMaxDop(countSql);
-                countCmd.CommandTimeout = 120;
-                AddParameters(countCmd, parameters);
-                result.TotalRows = (int)countCmd.ExecuteScalar()!;
+                // Report path: full unpaginated SELECT — no OFFSET/FETCH, no execution.
+                result.GeneratedSql = $"{dataQuery} {orderByClause}".Trim();
             }
-
-            using (var dataCmd = connection.CreateCommand())
+            else
             {
-                dataCmd.CommandText = AppendMaxDop(dataSql);
-                dataCmd.CommandTimeout = 120;
-                AddParameters(dataCmd, parameters);
+                // UI path: run count for pagination + fetch the current page.
+                var countInner = hasGroupBy
+                    ? $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause} {groupByClause}"
+                    : $"SELECT 1 AS __x FROM {fromClause} {joinSql} {whereClause}";
+                var countSql = $"SELECT COUNT(*) FROM ({countInner}) AS __count";
 
-                using var reader = dataCmd.ExecuteReader();
-                for (int i = 0; i < reader.FieldCount; i++)
-                    result.Columns.Add(reader.GetName(i));
+                var offset = (request.Page - 1) * result.PageSize;
+                var dataSql = $"{dataQuery} {orderByClause} OFFSET {offset} ROWS FETCH NEXT {result.PageSize} ROWS ONLY";
 
-                while (reader.Read())
+                result.GeneratedSql = dataSql;
+
+                using var connection = _connectionFactory.CreateConnection();
+                connection.Open();
+
+                using (var countCmd = connection.CreateCommand())
                 {
-                    var row = new Dictionary<string, object?>();
-                    for (int i = 0; i < reader.FieldCount; i++)
-                        row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-                    result.Rows.Add(row);
+                    countCmd.CommandText = AppendMaxDop(countSql);
+                    countCmd.CommandTimeout = 120;
+                    AddParameters(countCmd, parameters);
+                    result.TotalRows = (int)countCmd.ExecuteScalar()!;
                 }
 
-                result.TotalRowsReturned = result.Rows.Count;
+                using (var dataCmd = connection.CreateCommand())
+                {
+                    dataCmd.CommandText = AppendMaxDop(dataSql);
+                    dataCmd.CommandTimeout = 120;
+                    AddParameters(dataCmd, parameters);
+
+                    using var reader = dataCmd.ExecuteReader();
+                    for (int i = 0; i < reader.FieldCount; i++)
+                        result.Columns.Add(reader.GetName(i));
+
+                    while (reader.Read())
+                    {
+                        var row = new Dictionary<string, object?>();
+                        for (int i = 0; i < reader.FieldCount; i++)
+                            row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        result.Rows.Add(row);
+                    }
+
+                    result.TotalRowsReturned = result.Rows.Count;
+                }
             }
         }
         catch (Exception ex)

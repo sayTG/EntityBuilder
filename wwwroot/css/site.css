@@ -505,12 +505,12 @@ body {
     border-color: var(--eb-red-light);
 }
 
-.eb-btn-now {
+.eb-btn-when {
     background: var(--eb-white);
     border: 1px solid var(--eb-gray-200);
     color: var(--eb-gray-400);
     height: 30px;
-    padding: 0 0.6rem;
+    padding: 0 0.55rem;
     border-radius: 6px;
     cursor: pointer;
     transition: var(--eb-transition);
@@ -520,12 +520,12 @@ body {
     flex-shrink: 0;
 }
 
-.eb-btn-now:hover {
+.eb-btn-when:hover {
     border-color: var(--eb-red);
     color: var(--eb-red);
 }
 
-.eb-btn-now[aria-pressed="true"] {
+.eb-btn-when[aria-pressed="true"] {
     background: var(--eb-red);
     border-color: var(--eb-red);
     color: var(--eb-white);

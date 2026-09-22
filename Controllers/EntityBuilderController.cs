@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using EntityBuilder.Interfaces;
 using EntityBuilder.Models;
+using EntityBuilder.Utilities;
 using EntityBuilder.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -79,6 +80,9 @@ public class EntityBuilderController : Controller
         if (string.IsNullOrWhiteSpace(request.Sql))
             return BadRequest(new { message = "No SQL to send." });
 
+        var (sqlOk, sqlReason) = SqlSafetyGuard.EnsureSafeSelect(request.Sql);
+        if (!sqlOk) return BadRequest(new { message = sqlReason });
+
         var token = User.FindFirstValue("AccessToken");
         if (string.IsNullOrEmpty(token))
             return Unauthorized(new { message = "Session expired. Please log in again." });
@@ -114,61 +118,45 @@ public class EntityBuilderController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ScheduleReport([FromBody] ScheduleReportRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Sql))
-            return BadRequest(new { message = "No SQL to schedule." });
-
         var email = User.FindFirstValue(ClaimTypes.Email) ?? User.Identity?.Name;
         if (string.IsNullOrEmpty(email))
             return BadRequest(new { message = "Could not determine user email." });
+
+        // Preferred path: build SQL server-side from the structured definition. Client-supplied SQL
+        // is never trusted for the schedule flow — QueryDefinition wins if provided.
+        string sql;
+        Dictionary<string, string> parameters;
+        if (request.QueryDefinition != null)
+        {
+            var built = await _queryService.BuildQueryAsync(request.QueryDefinition);
+            if (!built.IsSuccess)
+                return BadRequest(new { message = built.ErrorMessage });
+            sql = built.GeneratedSql ?? "";
+            parameters = built.Parameters;
+        }
+        else
+        {
+            // Legacy path (older clients) — still guarded, still parameterised.
+            if (string.IsNullOrWhiteSpace(request.Sql))
+                return BadRequest(new { message = "No query to schedule." });
+            var (sqlOk, sqlReason) = SqlSafetyGuard.EnsureSafeSelect(request.Sql);
+            if (!sqlOk) return BadRequest(new { message = sqlReason });
+            sql = request.Sql;
+            parameters = request.DapperTemplateValues ?? new();
+        }
 
         var displayName = User.FindFirstValue("DisplayName") ?? email;
         var recipientEmail = string.IsNullOrWhiteSpace(request.RecipientEmail) ? email : request.RecipientEmail;
 
         var now = DateTime.UtcNow;
-        var timeParts = (request.ScheduledTime ?? "08:00").Split(':');
-        var hour = int.Parse(timeParts[0]);
-        var minute = timeParts.Length > 1 ? int.Parse(timeParts[1]) : 0;
-
-        // Convert local time to UTC using the client's offset
-        // JS getTimezoneOffset() returns positive for behind UTC (e.g., UTC-5 = 300, UTC+1 = -60)
-        var offsetMinutes = request.UtcOffsetMinutes;
-
-        DateTime nextRun;
-        switch (request.Frequency)
-        {
-            case ReportFrequency.Once:
-                if (!string.IsNullOrEmpty(request.ScheduledDate) && DateOnly.TryParse(request.ScheduledDate, out var date))
-                    nextRun = date.ToDateTime(new TimeOnly(hour, minute), DateTimeKind.Utc).AddMinutes(offsetMinutes);
-                else
-                    nextRun = now.Date.AddDays(1).AddHours(hour).AddMinutes(minute).AddMinutes(offsetMinutes);
-                break;
-            case ReportFrequency.Daily:
-                nextRun = now.Date.AddHours(hour).AddMinutes(minute).AddMinutes(offsetMinutes);
-                if (nextRun <= now) nextRun = nextRun.AddDays(1);
-                break;
-            case ReportFrequency.Weekly:
-                var targetDay = request.DayOfWeek ?? 1;
-                nextRun = now.Date.AddHours(hour).AddMinutes(minute).AddMinutes(offsetMinutes);
-                while ((int)nextRun.DayOfWeek != targetDay || nextRun <= now)
-                    nextRun = nextRun.AddDays(1);
-                break;
-            case ReportFrequency.Monthly:
-                var targetDayOfMonth = request.DayOfMonth ?? 1;
-                nextRun = new DateTime(now.Year, now.Month, Math.Min(targetDayOfMonth, DateTime.DaysInMonth(now.Year, now.Month)), hour, minute, 0, DateTimeKind.Utc).AddMinutes(offsetMinutes);
-                if (nextRun <= now) nextRun = nextRun.AddMonths(1);
-                break;
-            default:
-                nextRun = now.AddDays(1);
-                break;
-        }
-
         var report = new ScheduledReport
         {
-            Sql = request.Sql,
+            Sql = sql,
+            QueryDefinition = request.QueryDefinition,
             Subject = request.Subject ?? "Entity Builder Report",
             RecipientEmail = recipientEmail,
             DisplayName = recipientEmail != email ? recipientEmail : displayName,
-            DapperTemplateValues = request.DapperTemplateValues ?? new(),
+            DapperTemplateValues = parameters,
             CreatedBy = email,
             CreatedAt = now,
             Frequency = request.Frequency,
@@ -177,12 +165,67 @@ public class EntityBuilderController : Controller
             DayOfWeek = request.DayOfWeek,
             DayOfMonth = request.DayOfMonth,
             UtcOffsetMinutes = request.UtcOffsetMinutes,
-            Status = ReportStatus.Queued,
-            NextRun = nextRun
+            Status = ReportStatus.Queued
         };
+        report.NextRun = ScheduleNextRunCalculator.Compute(report, now);
 
         await _reportScheduleService.ScheduleReportAsync(report);
         return Json(new { message = "Report scheduled successfully.", report });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetScheduledReport(string id)
+    {
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? User.Identity?.Name;
+        if (string.IsNullOrEmpty(email))
+            return BadRequest(new { message = "Could not determine user email." });
+
+        var report = await _reportScheduleService.GetScheduledReportAsync(id, email);
+        if (report == null) return NotFound(new { message = "Scheduled report not found." });
+        return Json(report);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RerunScheduledReport(string id)
+    {
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? User.Identity?.Name;
+        if (string.IsNullOrEmpty(email))
+            return BadRequest(new { message = "Could not determine user email." });
+
+        var success = await _reportScheduleService.RerunScheduledReportAsync(id, email);
+        if (!success)
+            return NotFound(new { message = "Scheduled report not found." });
+
+        return Json(new { message = "Report re-queued. It will run on the next worker tick." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateScheduledReport(string id, [FromBody] EditScheduledReportRequest request)
+    {
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? User.Identity?.Name;
+        if (string.IsNullOrEmpty(email))
+            return BadRequest(new { message = "Could not determine user email." });
+
+        // If the client sent a structured definition, rebuild SQL server-side and let the service
+        // replace the stored SQL + parameters. Raw SQL from the client is never accepted here.
+        string? rebuiltSql = null;
+        Dictionary<string, string>? rebuiltParams = null;
+        if (request.QueryDefinition != null)
+        {
+            var built = await _queryService.BuildQueryAsync(request.QueryDefinition);
+            if (!built.IsSuccess)
+                return BadRequest(new { message = built.ErrorMessage });
+            rebuiltSql = built.GeneratedSql;
+            rebuiltParams = built.Parameters;
+        }
+
+        var updated = await _reportScheduleService.EditScheduledReportAsync(id, email, request, rebuiltSql, rebuiltParams);
+        if (updated == null)
+            return NotFound(new { message = "Scheduled report not found." });
+
+        return Json(new { message = "Report updated.", report = updated });
     }
 
     [HttpGet]

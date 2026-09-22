@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let pieChartInstance = null;
     let lastResultData = null;
     let lastQueryParameters = null;
+    let lastQueryDefinition = null; // last request sent to /ExecuteQuery — used as the authoritative structured definition when scheduling
     let currentView = 'grid';
 
     // ========== SEARCHABLE SELECT COMPONENT ==========
@@ -432,6 +433,62 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    // Shared markup for the mutually-exclusive NOW / TODAY toggles used by both the main
+    // WHERE row and the schedule-modal WHERE row.
+    const VALUE_KIND_BUTTONS_HTML = `
+        <button type="button" class="eb-btn-when" data-mode="Now" title="Use current date + time (resolved by DB at run time)" aria-pressed="false">NOW</button>
+        <button type="button" class="eb-btn-when" data-mode="Today" title="Use current date only (resolved by DB at run time)" aria-pressed="false">TODAY</button>`;
+
+    // Wire the NOW / TODAY / literal state onto a WHERE row.
+    // Returns { setMode(mode) } so callers can pre-fill from stored conditions.
+    // Modes: null (literal), 'Now', 'Today'.
+    function wireValueKindToggles(row, opSel, valInput) {
+        const buttons = Array.from(row.querySelectorAll('.eb-btn-when'));
+        const isNoValueOp = () => opSel.value === 'IS NULL' || opSel.value === 'IS NOT NULL';
+        const isMultiValueOp = () => opSel.value === 'IN';
+        const currentMode = () => buttons.find(b => b.getAttribute('aria-pressed') === 'true')?.dataset.mode || null;
+
+        const applyState = () => {
+            const mode = currentMode();
+            if (mode) {
+                valInput.value = '';
+                valInput.placeholder = mode === 'Today' ? 'TODAY (date) — resolved at run time' : 'NOW — resolved at run time';
+                valInput.disabled = true;
+            } else {
+                valInput.placeholder = 'Value';
+                valInput.disabled = false;
+            }
+        };
+
+        buttons.forEach(btn => btn.addEventListener('click', function () {
+            if (isNoValueOp() || isMultiValueOp()) return;
+            const wasOn = btn.getAttribute('aria-pressed') === 'true';
+            buttons.forEach(b => b.setAttribute('aria-pressed', 'false'));
+            if (!wasOn) btn.setAttribute('aria-pressed', 'true');
+            applyState();
+        }));
+
+        opSel.addEventListener('change', function () {
+            const noVal = isNoValueOp();
+            valInput.style.display = noVal ? 'none' : '';
+            const hide = noVal || isMultiValueOp();
+            buttons.forEach(b => b.style.display = hide ? 'none' : '');
+            if (hide) {
+                buttons.forEach(b => b.setAttribute('aria-pressed', 'false'));
+                applyState();
+            }
+            if (valInput.style.display === 'none') valInput.value = '';
+        });
+
+        return {
+            setMode(mode) {
+                buttons.forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === mode ? 'true' : 'false'));
+                applyState();
+            },
+            currentMode
+        };
+    }
+
     // ========== ADD WHERE ==========
     addWhereBtn?.addEventListener('click', function () {
         document.getElementById('noWhereMessage')?.remove();
@@ -451,47 +508,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 <option value="IS NULL">IS NULL</option><option value="IS NOT NULL">IS NOT NULL</option>
             </select>
             <input type="text" class="where-value" placeholder="Value">
-            <button type="button" class="eb-btn-now" title="Use current date/time (resolved by DB at run time)" aria-pressed="false">NOW</button>
+            ${VALUE_KIND_BUTTONS_HTML}
             <button class="eb-btn-remove" title="Remove"><i class="bi bi-x"></i></button>`;
         whereContainer.appendChild(row);
         initSearchableSelects(row);
 
         const opSel = row.querySelector('.where-operator');
         const valInput = row.querySelector('.where-value');
-        const nowBtn = row.querySelector('.eb-btn-now');
-
-        const isNoValueOp = () => opSel.value === 'IS NULL' || opSel.value === 'IS NOT NULL';
-        const isMultiValueOp = () => opSel.value === 'IN';
-
-        const applyNowState = () => {
-            const on = nowBtn.getAttribute('aria-pressed') === 'true';
-            if (on) {
-                valInput.value = '';
-                valInput.placeholder = 'NOW() — resolved at run time';
-                valInput.disabled = true;
-            } else {
-                valInput.placeholder = 'Value';
-                valInput.disabled = false;
-            }
-        };
-
-        nowBtn.addEventListener('click', function () {
-            if (isNoValueOp() || isMultiValueOp()) return;
-            const next = nowBtn.getAttribute('aria-pressed') !== 'true';
-            nowBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
-            applyNowState();
-        });
-
-        opSel.addEventListener('change', function () {
-            const noVal = isNoValueOp();
-            valInput.style.display = noVal ? 'none' : '';
-            nowBtn.style.display = (noVal || isMultiValueOp()) ? 'none' : '';
-            if (noVal || isMultiValueOp()) {
-                nowBtn.setAttribute('aria-pressed', 'false');
-                applyNowState();
-            }
-            if (valInput.style.display === 'none') valInput.value = '';
-        });
+        wireValueKindToggles(row, opSel, valInput);
 
         row.querySelector('.eb-btn-remove').addEventListener('click', function () {
             row.remove();
@@ -599,15 +623,15 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
 
-        document.querySelectorAll('.qb-where-row').forEach(row => {
+        document.querySelectorAll('#whereContainer .qb-where-row').forEach(row => {
             const col = row.querySelector('.where-column').value;
             if (!col) return;
-            const useNow = row.querySelector('.eb-btn-now')?.getAttribute('aria-pressed') === 'true';
+            const activeMode = row.querySelector('.eb-btn-when[aria-pressed="true"]')?.dataset.mode || null;
             request.whereConditions.push({
                 column: col, operator: row.querySelector('.where-operator').value,
-                value: useNow ? null : (row.querySelector('.where-value').value || null),
+                value: activeMode ? null : (row.querySelector('.where-value').value || null),
                 connector: row.querySelector('.where-connector').value,
-                valueKind: useNow ? 'Now' : 'Literal'
+                valueKind: activeMode || 'Literal'
             });
         });
 
@@ -657,9 +681,11 @@ document.addEventListener('DOMContentLoaded', function () {
             });
             const data = await resp.json();
             lastQueryParameters = data.parameters || {};
+            lastQueryDefinition = request;
             renderResults(data);
         } catch (err) {
             lastQueryParameters = null;
+            lastQueryDefinition = null;
             renderResults({ isSuccess: false, errorMessage: err.message });
         } finally {
             loadingSpinner.classList.add('d-none');
@@ -1032,6 +1058,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // ========== SCHEDULE REPORT ==========
     const scheduleReportModal = document.getElementById('scheduleReportModal');
     const scheduleReportModalInstance = scheduleReportModal ? new bootstrap.Modal(scheduleReportModal) : null;
+    scheduleReportModal?.addEventListener('hidden.bs.modal', () => { editingReportId = null; });
     const scheduleFrequencySelect = document.getElementById('scheduleFrequency');
     const scheduleDateGroup = document.getElementById('scheduleDateGroup');
     const scheduleDayOfWeekGroup = document.getElementById('scheduleDayOfWeekGroup');
@@ -1044,6 +1071,206 @@ document.addEventListener('DOMContentLoaded', function () {
     const frequencyLabels = ['Once', 'Daily', 'Weekly', 'Monthly'];
     const statusLabels = ['Queued', 'Sent', 'Failed', 'Cancelled'];
     const statusColors = { 0: '#059669', 1: '#2563EB', 2: '#DC2626', 3: '#6B7280' };
+
+    // When set, the schedule modal is in "edit" mode and Save PUTs instead of creating a new report.
+    let editingReportId = null;
+    const scheduleModalTitle = document.getElementById('scheduleReportModalLabel');
+    const confirmScheduleBtn = document.getElementById('confirmScheduleReport');
+
+    const scheduleQueryEditor = document.getElementById('scheduleQueryEditor');
+    const scheduleQuerySummary = document.getElementById('scheduleQuerySummary');
+    const scheduleWhereContainer = document.getElementById('scheduleWhereContainer');
+    const scheduleAddWhereBtn = document.getElementById('scheduleAddWhere');
+
+    // Holds the QueryBuilderRequest we're editing. WHERE conditions inside get replaced from the
+    // modal's WHERE rows on save; the rest of the definition (table / joins / selects / etc.) is
+    // preserved as-is and re-sent to the server, which re-generates SQL from it.
+    let editingQueryDefinition = null;
+
+    function setScheduleModalMode(mode) {
+        // mode: 'create' | 'edit'
+        const editing = mode === 'edit';
+        if (scheduleModalTitle) {
+            scheduleModalTitle.innerHTML = editing
+                ? '<i class="bi bi-pencil-square me-2"></i>Edit Scheduled Report'
+                : '<i class="bi bi-clock-fill me-2"></i>Schedule Report';
+        }
+        if (confirmScheduleBtn) {
+            confirmScheduleBtn.innerHTML = editing
+                ? '<i class="bi bi-check-lg me-1"></i> Save Changes'
+                : '<i class="bi bi-clock-fill me-1"></i> Schedule Report';
+        }
+        // The query editor (summary + WHERE dropdowns) only makes sense when editing an existing report.
+        scheduleQueryEditor?.classList.toggle('d-none', !editing);
+        if (!editing) {
+            editingQueryDefinition = null;
+            if (scheduleQuerySummary) scheduleQuerySummary.innerHTML = '';
+            if (scheduleWhereContainer) scheduleWhereContainer.innerHTML = '';
+        }
+    }
+
+    // Column options limited to the tables actually referenced by the query being edited.
+    // Assumes state.columns has already been hydrated by ensureColumnsForDefinition.
+    function buildScheduleColumnOptions(qdef) {
+        const seen = new Set();
+        const tables = [{ schema: qdef.schema, table: qdef.table }];
+        (qdef.joins || []).forEach(j => tables.push({ schema: j.schema, table: j.table }));
+        let html = '';
+        tables.forEach(t => {
+            const key = `${t.schema}.${t.table}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            const cols = state.columns[key] || [];
+            if (!cols.length) return;
+            html += `<optgroup label="${escapeHtml(t.table)}">`;
+            cols.forEach(c => {
+                html += `<option value="${t.schema}.${t.table}.${c.columnName}">[${escapeHtml(t.table)}].${escapeHtml(c.columnName)}</option>`;
+            });
+            html += '</optgroup>';
+        });
+        return html;
+    }
+
+    async function ensureColumnsForDefinition(qdef) {
+        const tables = [{ schema: qdef.schema, table: qdef.table }];
+        (qdef.joins || []).forEach(j => tables.push({ schema: j.schema, table: j.table }));
+        const uniq = new Map();
+        tables.forEach(t => uniq.set(`${t.schema}.${t.table}`, t));
+        // Sequentially to keep it simple; there are usually only a handful of tables in one query.
+        for (const t of uniq.values()) {
+            const key = `${t.schema}.${t.table}`;
+            if (!state.columns[key]) await fetchColumns(t.schema, t.table);
+        }
+    }
+
+    function addScheduleWhereRow(cond, columnOptions, isFirst) {
+        const row = document.createElement('div');
+        row.className = 'qb-where-row';
+        row.innerHTML = `
+            <select class="sw-connector" ${isFirst ? 'style="visibility:hidden"' : ''}>
+                <option value="AND">AND</option><option value="OR">OR</option>
+            </select>
+            <select class="sw-column"><option value="">-- Column --</option>${columnOptions}</select>
+            <select class="sw-operator">
+                <option value="=">=</option><option value="!=">!=</option>
+                <option value=">">&gt;</option><option value="<">&lt;</option>
+                <option value=">=">&gt;=</option><option value="<=">&lt;=</option>
+                <option value="LIKE">LIKE</option><option value="IN">IN</option>
+                <option value="IS NULL">IS NULL</option><option value="IS NOT NULL">IS NOT NULL</option>
+            </select>
+            <input type="text" class="sw-value" placeholder="Value">
+            ${VALUE_KIND_BUTTONS_HTML}
+            <button type="button" class="eb-btn-remove" title="Remove"><i class="bi bi-x"></i></button>`;
+        scheduleWhereContainer.appendChild(row);
+
+        const opSel = row.querySelector('.sw-operator');
+        const valInput = row.querySelector('.sw-value');
+        const toggles = wireValueKindToggles(row, opSel, valInput);
+
+        row.querySelector('.eb-btn-remove').addEventListener('click', function () {
+            row.remove();
+            const first = scheduleWhereContainer.querySelector('.qb-where-row');
+            if (first) first.querySelector('.sw-connector').style.visibility = 'hidden';
+        });
+
+        // Preload values from the stored condition.
+        if (cond) {
+            row.querySelector('.sw-connector').value = cond.connector || 'AND';
+            row.querySelector('.sw-column').value = cond.column || '';
+            opSel.value = cond.operator || '=';
+            if (cond.valueKind === 'Now' || cond.valueKind === 'Today') {
+                toggles.setMode(cond.valueKind);
+            } else if (cond.value != null) {
+                valInput.value = cond.value;
+            }
+            opSel.dispatchEvent(new Event('change'));
+            // If the operator dispatch cleared the toggle (e.g. IN / IS NULL), re-apply the stored mode.
+            if (cond.valueKind === 'Now' || cond.valueKind === 'Today') toggles.setMode(cond.valueKind);
+        }
+
+        initSearchableSelects(row);
+        return row;
+    }
+
+    async function populateScheduleQueryEditor(qdef) {
+        editingQueryDefinition = qdef;
+        if (!qdef) {
+            scheduleQuerySummary.innerHTML = '<em class="text-danger">This report was scheduled before edit support existed. Cancel it and re-schedule from the query builder.</em>';
+            scheduleWhereContainer.innerHTML = '';
+            scheduleAddWhereBtn.disabled = true;
+            return;
+        }
+        scheduleAddWhereBtn.disabled = false;
+
+        const parts = [];
+        parts.push(`<div><strong>Table:</strong> [${escapeHtml(qdef.schema)}].[${escapeHtml(qdef.table)}]</div>`);
+        if (qdef.joins?.length) {
+            parts.push('<div><strong>Joins:</strong> ' + qdef.joins.map(j => `${escapeHtml(j.joinType)} [${escapeHtml(j.schema)}].[${escapeHtml(j.table)}]`).join(', ') + '</div>');
+        }
+        if (qdef.selectedColumns?.length) {
+            parts.push('<div><strong>Columns:</strong> ' + qdef.selectedColumns.map(c => escapeHtml(c.column)).join(', ') + '</div>');
+        }
+        if (qdef.groupByColumns?.length) {
+            parts.push('<div><strong>Group by:</strong> ' + qdef.groupByColumns.map(g => escapeHtml(g.column)).join(', ') + '</div>');
+        }
+        if (qdef.aggregateColumns?.length) {
+            parts.push('<div><strong>Aggregates:</strong> ' + qdef.aggregateColumns.map(a => `${escapeHtml(a.function)}(${escapeHtml(a.column)})`).join(', ') + '</div>');
+        }
+        if (qdef.orderByColumns?.length) {
+            parts.push('<div><strong>Order by:</strong> ' + qdef.orderByColumns.map(o => `${escapeHtml(o.column)} ${escapeHtml(o.direction || 'ASC')}`).join(', ') + '</div>');
+        }
+        scheduleQuerySummary.innerHTML = parts.join('');
+
+        await ensureColumnsForDefinition(qdef);
+        const columnOptions = buildScheduleColumnOptions(qdef);
+
+        scheduleWhereContainer.innerHTML = '';
+        const conditions = qdef.whereConditions || [];
+        conditions.forEach((c, i) => addScheduleWhereRow(c, columnOptions, i === 0));
+    }
+
+    // Wire the "add condition" button for the modal (fires against the currently-loaded definition).
+    scheduleAddWhereBtn?.addEventListener('click', function () {
+        if (!editingQueryDefinition) return;
+        const columnOptions = buildScheduleColumnOptions(editingQueryDefinition);
+        const isFirst = scheduleWhereContainer.querySelectorAll('.qb-where-row').length === 0;
+        addScheduleWhereRow(null, columnOptions, isFirst);
+    });
+
+    function collectScheduleWhereConditions() {
+        const out = [];
+        scheduleWhereContainer.querySelectorAll('.qb-where-row').forEach(row => {
+            const col = row.querySelector('.sw-column').value;
+            if (!col) return;
+            const activeMode = row.querySelector('.eb-btn-when[aria-pressed="true"]')?.dataset.mode || null;
+            out.push({
+                column: col,
+                operator: row.querySelector('.sw-operator').value,
+                value: activeMode ? null : (row.querySelector('.sw-value').value || null),
+                connector: row.querySelector('.sw-connector').value,
+                valueKind: activeMode || 'Literal'
+            });
+        });
+        return out;
+    }
+
+    function populateScheduleModalFromReport(r) {
+        scheduleSubjectInput.value = r.subject || 'Entity Builder Report';
+
+        // If the recipient matches the logged-in user email we can't know that server-side without another lookup,
+        // so always show it in the custom-email field for clarity when editing.
+        scheduleSendToLoginCheckbox.checked = false;
+        scheduleCustomEmailGroup.classList.remove('d-none');
+        scheduleCustomEmail.value = r.recipientEmail || '';
+
+        scheduleFrequencySelect.value = String(r.frequency ?? 0);
+        scheduleFrequencySelect.dispatchEvent(new Event('change'));
+
+        document.getElementById('scheduleTime').value = r.scheduledTime || '08:00';
+        document.getElementById('scheduleDate').value = r.scheduledDate || '';
+        if (r.dayOfWeek != null) document.getElementById('scheduleDayOfWeek').value = String(r.dayOfWeek);
+        if (r.dayOfMonth != null) document.getElementById('scheduleDayOfMonth').value = String(r.dayOfMonth);
+    }
 
     // Toggle conditional fields based on frequency
     scheduleFrequencySelect?.addEventListener('change', function () {
@@ -1063,7 +1290,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Open schedule modal
+    // Open schedule modal (create mode)
     document.getElementById('scheduleReport')?.addEventListener('click', function () {
         reportFeedback.classList.add('d-none');
         const sqlPreview = document.getElementById('sqlPreview');
@@ -1073,6 +1300,9 @@ document.addEventListener('DOMContentLoaded', function () {
             showReportFeedback('Please execute a query first to generate SQL.', true);
             return;
         }
+
+        editingReportId = null;
+        setScheduleModalMode('create');
 
         // Reset modal
         scheduleSubjectInput.value = 'Entity Builder Report';
@@ -1090,11 +1320,9 @@ document.addEventListener('DOMContentLoaded', function () {
         scheduleReportModalInstance.show();
     });
 
-    // Confirm schedule
+    // Confirm schedule (create or edit)
     document.getElementById('confirmScheduleReport')?.addEventListener('click', async function () {
-        const sqlPreview = document.getElementById('sqlPreview');
-        const rawSql = sqlPreview?.textContent?.trim();
-        const sql = rawSql.replace(/\s+OFFSET\s+\d+\s+ROWS\s+FETCH\s+NEXT\s+\d+\s+ROWS\s+ONLY/gi, '');
+        const isEdit = !!editingReportId;
 
         const subject = scheduleSubjectInput.value.trim();
         if (!subject) {
@@ -1119,11 +1347,50 @@ document.addEventListener('DOMContentLoaded', function () {
         const scheduledDate = document.getElementById('scheduleDate').value || null;
         const dayOfWeek = frequency === 2 ? parseInt(document.getElementById('scheduleDayOfWeek').value) : null;
         const dayOfMonth = frequency === 3 ? parseInt(document.getElementById('scheduleDayOfMonth').value) : null;
+        const utcOffsetMinutes = new Date().getTimezoneOffset();
+
+        // Edit path — server rebuilds SQL from the (modified) structured definition. Client never posts raw SQL.
+        if (isEdit) {
+            let queryDefinition = null;
+            if (editingQueryDefinition) {
+                queryDefinition = { ...editingQueryDefinition, whereConditions: collectScheduleWhereConditions() };
+            }
+            scheduleReportModalInstance.hide();
+            try {
+                const body = { subject, recipientEmail, queryDefinition, frequency, scheduledTime, scheduledDate, dayOfWeek, dayOfMonth, utcOffsetMinutes };
+                const resp = await fetch(`/EntityBuilder/UpdateScheduledReport/${editingReportId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': getAntiForgeryToken() },
+                    body: JSON.stringify(body)
+                });
+                const result = await resp.json();
+                if (resp.ok) {
+                    showReportFeedback('Scheduled report updated.', false);
+                    loadScheduledReports();
+                } else {
+                    showReportFeedback(result.message || 'Failed to update report.', true);
+                }
+            } catch (err) {
+                showReportFeedback('Error updating report: ' + err.message, true);
+            } finally {
+                editingReportId = null;
+                editingQueryDefinition = null;
+            }
+            return;
+        }
+
+        // Create path
+        const sqlPreview = document.getElementById('sqlPreview');
+        const rawSql = sqlPreview?.textContent?.trim();
+        const sql = rawSql.replace(/\s+OFFSET\s+\d+\s+ROWS\s+FETCH\s+NEXT\s+\d+\s+ROWS\s+ONLY/gi, '');
 
         scheduleReportModalInstance.hide();
 
         try {
             const body = {
+                // Preferred: structured definition — server rebuilds SQL from it (no client SQL trusted).
+                queryDefinition: lastQueryDefinition,
+                // Legacy fallback if the server is older or the definition isn't available.
                 sql,
                 subject,
                 dapperTemplateValues: lastQueryParameters || {},
@@ -1132,7 +1399,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 scheduledDate,
                 dayOfWeek,
                 dayOfMonth,
-                utcOffsetMinutes: new Date().getTimezoneOffset()
+                utcOffsetMinutes
             };
             if (recipientEmail) body.recipientEmail = recipientEmail;
 
@@ -1181,14 +1448,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 const statusColor = statusColors[r.status] || '#6B7280';
                 const statusLabel = statusLabels[r.status] || 'Unknown';
                 const freqLabel = frequencyLabels[r.frequency] || 'Unknown';
-                const canCancel = r.status === 0;
+                // 0=Queued, 1=Sent, 2=Failed
+                const canEdit = r.status === 0 || r.status === 2;
+                const canRerun = r.status === 1 || r.status === 2;
+                const canCancel = r.status === 0 || r.status === 2;
+                const actions = [
+                    canEdit ? `<button class="btn btn-sm btn-outline-secondary edit-schedule-btn me-1" data-id="${r.id}" title="Edit"><i class="bi bi-pencil"></i></button>` : '',
+                    canRerun ? `<button class="btn btn-sm btn-outline-primary rerun-schedule-btn me-1" data-id="${r.id}" title="Run again now"><i class="bi bi-arrow-clockwise"></i></button>` : '',
+                    canCancel ? `<button class="btn btn-sm btn-outline-danger cancel-schedule-btn" data-id="${r.id}" title="Cancel"><i class="bi bi-x-circle"></i></button>` : ''
+                ].join('');
                 return `<tr>
                     <td style="padding:0.5rem 0.75rem;">${escapeHtml(r.subject)}</td>
                     <td style="padding:0.5rem 0.75rem;">${escapeHtml(r.recipientEmail)}</td>
                     <td style="padding:0.5rem 0.75rem;">${freqLabel}</td>
                     <td style="padding:0.5rem 0.75rem;">${nextRun}</td>
                     <td style="padding:0.5rem 0.75rem;"><span style="color:${statusColor};font-weight:600;">${statusLabel}</span></td>
-                    <td style="padding:0.5rem 0.75rem;">${canCancel ? `<button class="btn btn-sm btn-outline-danger cancel-schedule-btn" data-id="${r.id}"><i class="bi bi-x-circle me-1"></i>Cancel</button>` : ''}</td>
+                    <td style="padding:0.5rem 0.75rem;white-space:nowrap;">${actions}</td>
                 </tr>`;
             }).join('');
         } catch (err) {
@@ -1196,29 +1471,72 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // Cancel scheduled report
+    // Scheduled reports: cancel / rerun / edit
     document.getElementById('scheduledReportsBody')?.addEventListener('click', async function (e) {
-        const btn = e.target.closest('.cancel-schedule-btn');
-        if (!btn) return;
+        const cancelBtn = e.target.closest('.cancel-schedule-btn');
+        const rerunBtn = e.target.closest('.rerun-schedule-btn');
+        const editBtn = e.target.closest('.edit-schedule-btn');
 
-        const id = btn.dataset.id;
-        if (!confirm('Cancel this scheduled report?')) return;
-
-        try {
-            const resp = await fetch(`/EntityBuilder/CancelScheduledReport/${id}`, {
-                method: 'DELETE',
-                headers: { 'RequestVerificationToken': getAntiForgeryToken() }
-            });
-
-            if (resp.ok) {
-                showReportFeedback('Scheduled report cancelled.', false);
-                loadScheduledReports();
-            } else {
-                const result = await resp.json();
-                showReportFeedback(result.message || 'Failed to cancel.', true);
+        if (cancelBtn) {
+            const id = cancelBtn.dataset.id;
+            if (!confirm('Cancel this scheduled report?')) return;
+            try {
+                const resp = await fetch(`/EntityBuilder/CancelScheduledReport/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'RequestVerificationToken': getAntiForgeryToken() }
+                });
+                if (resp.ok) {
+                    showReportFeedback('Scheduled report cancelled.', false);
+                    loadScheduledReports();
+                } else {
+                    const result = await resp.json();
+                    showReportFeedback(result.message || 'Failed to cancel.', true);
+                }
+            } catch (err) {
+                showReportFeedback('Error cancelling report: ' + err.message, true);
             }
-        } catch (err) {
-            showReportFeedback('Error cancelling report: ' + err.message, true);
+            return;
+        }
+
+        if (rerunBtn) {
+            const id = rerunBtn.dataset.id;
+            if (!confirm('Run this report again now?')) return;
+            try {
+                const resp = await fetch(`/EntityBuilder/RerunScheduledReport/${id}`, {
+                    method: 'POST',
+                    headers: { 'RequestVerificationToken': getAntiForgeryToken() }
+                });
+                const result = await resp.json();
+                if (resp.ok) {
+                    showReportFeedback(result.message || 'Report re-queued.', false);
+                    loadScheduledReports();
+                } else {
+                    showReportFeedback(result.message || 'Failed to rerun.', true);
+                }
+            } catch (err) {
+                showReportFeedback('Error rerunning report: ' + err.message, true);
+            }
+            return;
+        }
+
+        if (editBtn) {
+            const id = editBtn.dataset.id;
+            try {
+                const resp = await fetch(`/EntityBuilder/GetScheduledReport/${id}`);
+                if (!resp.ok) {
+                    const result = await resp.json().catch(() => ({}));
+                    showReportFeedback(result.message || 'Failed to load report.', true);
+                    return;
+                }
+                const report = await resp.json();
+                editingReportId = id;
+                setScheduleModalMode('edit');
+                populateScheduleModalFromReport(report);
+                await populateScheduleQueryEditor(report.queryDefinition);
+                scheduleReportModalInstance.show();
+            } catch (err) {
+                showReportFeedback('Error loading report: ' + err.message, true);
+            }
         }
     });
 
